@@ -1,77 +1,86 @@
 # Animepahe DL Desktop
 
-A cross-platform Rust/egui desktop client for Animepahe. The app modernises the original `animepahe-dl.sh` script with a responsive, production-ready UI and is structured to showcase full-stack engineering skills in a portfolio or CV.
+Animepahe DL Desktop is now a Tauri + React application with a Rust backend. It modernises the original `animepahe-dl.sh` experience, keeping the fast downloader pipeline while delivering a polished desktop UI. This GUI is heavily based on the excellent CLI tool [KevCui/animepahe-dl](https://github.com/KevCui/animepahe-dl/), reusing its ergonomics while layering on a desktop-first experience.
+
+![Animepahe DL Desktop showing the episode grid, filters, and download status](Screenshot.png)
 
 ## Highlights
 
 - 🔍 Guided discovery: search Animepahe, review matches, and apply slugs instantly.
-- 🎯 Precision controls: filter by resolution/audio, enter episode specs (`1,3-5,*`), or tick episodes from a checklist.
-- 📦 Source preview modal: inspect audio/resolution variants before committing to a download.
-- 🚀 Robust pipeline: ffmpeg-based single-thread mode with live progress parsing; multi-thread mode parallelises segment fetch/decrypt/concat.
-- 🗂️ Persistent settings: theme, base URL, and download directory are stored in the user's config directory.
-- 🛠️ CI-ready: GitHub Actions workflow produces packaged artifacts for macOS, Windows, and Linux.
-
-<p align="center"><em>Screenshot of the refreshed interface, featuring grouped panels, search results, and progress trackers.</em></p>
+- 🎯 Precision controls: filter by resolution/audio, enter specs (`1,3-5,*`), or tick episodes from a checklist.
+- 📦 Source preview modal: inspect audio/resolution blends before downloading.
+- 🚀 Robust pipeline: ffmpeg single-thread mode with stderr progress plus multi-thread segment download/decrypt/concat.
+- 🗂️ Persistent settings: theme, base URL, and download folder stored in the OS config dir.
+- 🛠️ CI-ready: GitHub Actions produces installers/archives for macOS, Windows, and Linux.
 
 ## Tech Stack
 
-- Rust 2021 + `tokio` runtime for async orchestration
-- `egui` / `eframe` for cross-platform desktop UI
-- `reqwest`, `scraper`, `regex` for HTTP and HTML processing
-- External tools: `ffmpeg`, `node`, `openssl` (detected at runtime)
+- React 18 + Vite front end bundled inside a Tauri shell
+- Tailwind CSS and shadcn/ui (Radix primitives) for styling and components
+- Neon-glassmorphism desktop UI with gradient accents and vector icons
+- Rust 2021 backend with `tokio`, `reqwest`, `scraper`, and `regex`
+- macOS crash fix via `winit` ≥ 0.30.12 and `objc2` + `objc2-foundation` built with the `relax-sign-encoding` feature
+- External binaries: `ffmpeg`, `node`, `openssl` (detected at runtime)
 
 ## Prerequisites
 
-Install these tools on the machine where you run or build the app:
+Install on your machine before building:
 
-- [Rust toolchain](https://rustup.rs/) (stable)
+- [Rust toolchain](https://rustup.rs/) (stable channel)
+- [Node.js](https://nodejs.org/) 18+ and npm/pnpm/yarn
 - [ffmpeg](https://ffmpeg.org/)
-- [Node.js](https://nodejs.org/)
-- [OpenSSL CLI](https://www.openssl.org/) (only required when Threads > 1)
+- [OpenSSL CLI](https://www.openssl.org/) (needed when Threads > 1)
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/<your-account>/animepahe-dl.git
 cd animepahe-dl
-cargo run --release
+npm install # installs tailwind, shadcn/ui dependencies, radix primitives
+npm run tauri dev
 ```
 
-The optimised binary is written to `target/release/animepahe-dl-desktop`. Launch it directly or package it with the licence/readme.
+This spins up the Vite dev server with hot reload inside the Tauri shell.
 
-## Run & Build Locally
+### Build & Package
 
 ```bash
-cargo run             # debug build + launches the GUI
-cargo build --release # optimised binary at target/release/
+npm run build          # bundles the React front end
+npm run tauri build    # produces installers/archives per platform
 ```
 
-Use `cargo install --path .` if you want a globally available binary.
+Output goes to `src-tauri/target/release/` (DMG/ZIP on macOS, MSI/EXE on Windows, AppImage/deb/tar on Linux depending on target).
+
+### Backend-only
+
+```bash
+cargo fmt -p animepahe-tauri
+cargo check -p animepahe-tauri --locked
+cargo build -p animepahe-tauri --release --locked
+```
 
 ## Using the App
 
-1. **Search** – enter an anime name and click “Search by name”.
-2. **Apply** – highlight a result and choose “Use selection” to populate the slug/UUID.
-3. **Fetch** – fetch episodes, then either type an episode spec (`1,3-5,*`) or tick entries from the list.
-4. **Preview** – open “Preview sources” to verify available audio/resolution streams.
-5. **Download** – set thread count, choose the output folder, and start. Progress bars display ffmpeg timing or segment completion.
+1. **Search** – enter a title and click “Search”.
+2. **Apply** – select a result to fill the slug automatically.
+3. **Fetch** – pull the episode catalogue, then tick entries or type a spec (`1,3-5,*`).
+4. **Preview** – open “Preview sources” to inspect audio/resolution streams.
+5. **Download** – adjust threads, choose the output folder, and start. Progress events stream live to the UI.
 
-Theme, base URL, and download directory live in the toolbar and persist between sessions.
+Theme, base URL, and output directory are editable on the toolbar and persist between runs.
 
 ## Packaging & Releases
 
-- **Manual build** – run `cargo build --release` on each OS. Distribute the binary with `README_DESKTOP.md` and `LICENSE` (zip/tar as desired).
-- **Automated workflow** – `.github/workflows/release.yml` builds Linux (`.tar.gz`), macOS (`.zip`), and Windows (`.zip`) archives. Trigger it with a `v*` tag or via the GitHub “Run workflow” button.
+- `npm run tauri build` bundles the front end and emits cross-platform artifacts.
+- The GitHub workflow in `.github/workflows/release.yml` builds Linux `.tar.gz`, macOS `.zip`, and Windows `.zip` artifacts when triggered via `v*` tags or the “Run workflow” button.
 
 ## Development Checklist
 
 ```bash
-cargo fmt        # formatting
-cargo check      # fast type/lint pass
-cargo build --release
+cargo fmt -p animepahe-tauri
+cargo check -p animepahe-tauri --locked
+npm run lint   # add ESLint/Prettier if desired
 ```
-
-The legacy shell script remains for reference, but the desktop app is the primary experience.
 
 ## License
 

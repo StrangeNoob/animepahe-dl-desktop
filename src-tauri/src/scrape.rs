@@ -2,9 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
+use serde::Serialize;
 use std::process::Command;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Candidate {
     pub src: String,
     pub audio: Option<String>,
