@@ -5,7 +5,6 @@ anime.list
 node_modules
 package-lock.json
 .editorconfig
-!.gitignore
 .git
 cookie.json
 bin/*.json
