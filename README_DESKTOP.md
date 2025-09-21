@@ -1,35 +1,38 @@
-Animepahe DL Desktop (Rust/egui)
+Animepahe DL Desktop (Tauri + React + Rust)
 
 Overview
-- Desktop app that mirrors features of `animepahe-dl.sh` using Rust.
-- GUI built with egui/eframe; async networking via reqwest/tokio.
+- Cross-platform Tauri shell with a React front end and a Rust backend.
+- Mirrors the capabilities of `animepahe-dl.sh` while providing a modern UI, taking cues from the original CLI project [KevCui/animepahe-dl](https://github.com/KevCui/animepahe-dl/).
 
 Features
-- Search by name (fills slug) and/or enter slug manually.
-- Pick episodes via text spec: `1,3-5,*`.
-- Filter by resolution (e.g., `1080`) and audio (e.g., `eng`, `jpn`).
-- List m3u8 only (no download) toggle.
-- Download via ffmpeg (single-thread) or parallel segment download (set Threads > 1) with OpenSSL decrypt + ffmpeg concat.
+- Search Animepahe by title and auto-fill the slug.
+- Enter episode specs (`1,3-5,*`) or tick checkboxes for precise selection.
+- Filter by resolution/audio, preview available sources per episode.
+- Download through ffmpeg (threads = 1) or parallel segment mode (threads > 1) with AES-128 decryption and concat.
+- Persist theme, host URL, and download directory across launches.
 
 Requirements
-- Node.js: used to unpack obfuscated script to extract the `.m3u8` link.
-- ffmpeg: required for HLS download and final concatenation.
-- openssl (CLI): required when Threads > 1 for AES-128-CBC decrypt.
+- Node.js (18+) – used for the React front end and for unpacking the obfuscated player script.
+- Rust toolchain – builds the Tauri backend.
+- ffmpeg – required for both streaming and concatenation.
+- openssl (CLI) – required for multi-thread segment decryption.
+- macOS note: the project depends on `winit` ≥ 0.30.12 with `objc2`’s `relax-sign-encoding` feature to avoid Sonoma monitor enumeration crashes.
 
 Build
-1. Ensure Rust toolchain is installed (rustup + cargo).
-2. Build and run: `cargo run --release`.
+1. Install dependencies: `npm install`.
+2. Launch dev shell: `npm run tauri dev`.
+3. Produce installers: `npm run tauri build`.
 
 Notes
-- Cookie: app generates a random `__ddg2_` like the script and sends it with requests.
-- Host: configurable from the toolbar; updates persist between launches.
-- Parallel decrypt: replicates script behavior using IV=0. Some HLS streams may specify IV differently; support can be extended.
-- If Node is not available, m3u8 extraction will fail. A future enhancement is embedding a JS engine (e.g., `boa`) to avoid the Node dependency.
+- Cookie: the backend generates a random `__ddg2_` cookie for each session.
+- Host URL: configurable in the toolbar; persisted to the OS config dir.
+- Parallel decrypt assumes IV=0 (matching the shell script behaviour).
+- Without Node on PATH the m3u8 unpacking step will fail; future work could embed a JS engine to remove this dependency.
 
 Troubleshooting
-- If you get "node not found" or "ffmpeg not found", install those binaries and ensure they are on PATH.
-- If downloads stall, try single-thread mode (Threads = 1) to let ffmpeg handle HLS.
+- Ensure `ffmpeg`, `openssl`, and `node` binaries are discoverable on PATH.
+- If downloads stall, switch to single-thread mode which delegates to ffmpeg entirely.
 
 Distribution
-- Local: run `cargo build --release` on the target OS. The optimized binary will be in `target/release/`. Package it together with `README_DESKTOP.md` and `LICENSE` for distribution.
-- CI workflow: the repository includes `.github/workflows/release.yml` which builds release archives for Linux (`.tar.gz`), macOS (`.zip`), and Windows (`.zip`). Trigger it via a `v*` tag push or manually through the GitHub “Run workflow” button. Resulting artifacts are uploaded under the workflow run.
+- Run `npm run tauri build` on each target OS. Artifacts are emitted under `src-tauri/target/release/bundle/`.
+- The GitHub workflow `.github/workflows/release.yml` builds the same bundles for Linux/macOS/Windows on tag pushes or manual dispatch.

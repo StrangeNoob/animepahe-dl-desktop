@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 45% 6%;
+    --foreground: 210 40% 98%;
+    --muted: 243 33% 14%;
+    --muted-foreground: 215 20% 70%;
+    --popover: 240 45% 6%;
+    --popover-foreground: 210 40% 98%;
+    --card: 240 45% 8%;
+    --card-foreground: 210 40% 98%;
+    --border: 240 30% 22%;
+    --input: 240 30% 22%;
+    --primary: 283 94% 58%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 195 100% 50%;
+    --secondary-foreground: 222 47% 12%;
+    --accent: 195 100% 50%;
+    --accent-foreground: 222 47% 12%;
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 315 97% 65%;
+    --radius: 1rem;
+  }
+
+  .light {
+    --background: 210 40% 97%;
+    --foreground: 222 47% 12%;
+    --muted: 210 40% 92%;
+    --muted-foreground: 222 25% 45%;
+    --popover: 210 40% 98%;
+    --popover-foreground: 222 47% 12%;
+    --card: 210 40% 98%;
+    --card-foreground: 222 47% 12%;
+    --border: 210 30% 85%;
+    --input: 210 30% 85%;
+    --primary: 283 94% 58%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 195 100% 50%;
+    --secondary-foreground: 222 47% 12%;
+    --accent: 195 100% 50%;
+    --accent-foreground: 222 47% 12%;
+    --destructive: 0 83% 61%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 315 97% 65%;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background-image: radial-gradient(circle at 20% 20%, rgba(148, 0, 211, 0.45), transparent 40%),
+      radial-gradient(circle at 80% 0%, rgba(236, 72, 153, 0.35), transparent 45%),
+      radial-gradient(circle at 60% 75%, rgba(34, 211, 238, 0.35), transparent 40%),
+      linear-gradient(145deg, rgba(2, 6, 23, 0.95), rgba(15, 23, 42, 0.92));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_20px_60px_-25px_rgba(8,47,73,0.65)] backdrop-blur-xl;
+  }
+}

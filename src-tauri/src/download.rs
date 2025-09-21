@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
 use regex::Regex;
 use reqwest::Client;
+use sanitize_filename::sanitize;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -24,7 +25,7 @@ pub async fn download_episode(
     let base_folder = out_base
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let out_dir = base_folder.join(sanitize_filename::sanitize(anime_name));
+    let out_dir = base_folder.join(sanitize(anime_name));
     fs::create_dir_all(&out_dir)?;
     let out_file = out_dir.join(format!("{}.mp4", ep));
 
