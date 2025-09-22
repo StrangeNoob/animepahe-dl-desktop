@@ -11,17 +11,123 @@
     "distDir": "../dist"
   },
   "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "copyFile": true,
+        "createDir": true,
+        "removeDir": true,
+        "removeFile": true,
+        "renameFile": true
+      },
+      "path": {
+        "all": true
+      },
+      "window": {
+        "all": false,
+        "close": true,
+        "hide": true,
+        "show": true,
+        "maximize": true,
+        "minimize": true,
+        "unmaximize": true,
+        "unminimize": true,
+        "startDragging": true
+      }
+    },
     "windows": [
       {
         "title": "Animepahe DL Desktop",
         "width": 1280,
         "height": 800,
-        "resizable": true
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "transparent": false,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "skipTaskbar": false
       }
     ],
     "bundle": {
-      "identifier": "com.leon.animepahe",
-      "targets": "all"
+      "identifier": "dev.prateekm.animepahe-dl-desktop",
+      "targets": "all",
+      "category": "Utility",
+      "copyright": "Copyright © 2025 Prateek M",
+      "shortDescription": "Anime downloader desktop application",
+      "longDescription": "A modern desktop application for downloading anime from Animepahe with a sleek UI built with Tauri, React, and Rust.",
+      "externalBin": [],
+      "resources": [],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "macOS": {
+        "frameworks": [],
+        "minimumSystemVersion": "10.13",
+        "exceptionDomain": "",
+        "signingIdentity": null,
+        "entitlements": null,
+        "providerShortName": null,
+        "license": ""
+      },
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": "",
+        "wix": {
+          "language": "en-US",
+          "template": "main.wxs"
+        },
+        "nsis": {
+          "displayLanguageSelector": false,
+          "installerIcon": "icons/icon.ico",
+          "installMode": "currentUser",
+          "languages": [
+            "English"
+          ],
+          "template": "installer.nsi"
+        },
+        "webviewInstallMode": {
+          "type": "downloadBootstrapper"
+        }
+      },
+      "linux": {
+        "deb": {
+          "depends": [
+            "libgtk-3-0",
+            "libwebkit2gtk-4.0-37"
+          ],
+          "section": "utils",
+          "priority": "optional"
+        },
+        "appimage": {
+          "bundleMediaFramework": false
+        }
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
     }
   }
 }

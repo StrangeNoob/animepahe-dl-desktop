@@ -17,3 +17,6 @@ Cargo.lock
 /.vscode/
 dist/
 vendor/*
+*.dmg
+*.sh
+*.app
