@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v1/schema.json",
+  "$schema": "https://schema.tauri.app/config/2.0.0",
   "package": {
     "productName": "Animepahe DL Desktop",
     "version": "0.1.0"
