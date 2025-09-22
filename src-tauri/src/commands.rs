@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::time::{sleep, Duration};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::JoinHandle, State, Window};
+use tauri::{async_runtime::JoinHandle, Emitter, State, Window};
 
 use crate::{
     api, download, scrape,
