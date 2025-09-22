@@ -20,7 +20,8 @@
     "build:all": "tauri build --bundles all"
   },
   "dependencies": {
-    "@tauri-apps/api": "^1.6.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-select": "^1.0.5",
     "@radix-ui/react-progress": "^1.0.3",
@@ -33,7 +34,7 @@
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.0",
+    "@tauri-apps/cli": "^2",
     "@types/node": "^20.12.7",
     "@types/react": "^18.2.39",
     "@types/react-dom": "^18.2.17",

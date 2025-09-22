@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/api/dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import {
   loadSettings,
