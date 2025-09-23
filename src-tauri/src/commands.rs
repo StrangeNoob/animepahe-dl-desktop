@@ -158,6 +158,20 @@ pub struct DownloadRequest {
     pub download_dir: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct RequirementStatus {
+    pub name: String,
+    pub available: bool,
+    pub path: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequirementsCheckResponse {
+    pub all_available: bool,
+    pub requirements: Vec<RequirementStatus>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 struct StatusPayload {
     episode: u32,
@@ -177,6 +191,21 @@ pub async fn start_download(
     state: State<'_, AppState>,
     req: DownloadRequest,
 ) -> Result<(), String> {
+    // Check requirements before starting download
+    let requirements_check = check_requirements().await?;
+    if !requirements_check.all_available {
+        let missing: Vec<String> = requirements_check
+            .requirements
+            .iter()
+            .filter(|r| !r.available)
+            .map(|r| r.name.clone())
+            .collect();
+        return Err(format!(
+            "Missing required dependencies: {}. Please install them before downloading.",
+            missing.join(", ")
+        ));
+    }
+
     let cookie = state.cookie();
     let anime_name = if req.anime_name.is_empty() {
         req.slug.clone()
@@ -375,4 +404,78 @@ pub async fn start_download(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn check_requirements() -> Result<RequirementsCheckResponse, String> {
+    let mut requirements = Vec::new();
+    let mut all_available = true;
+
+    // Check Node.js
+    match which::which("node") {
+        Ok(path) => {
+            requirements.push(RequirementStatus {
+                name: "Node.js".to_string(),
+                available: true,
+                path: Some(path.to_string_lossy().to_string()),
+                error: None,
+            });
+        }
+        Err(err) => {
+            all_available = false;
+            requirements.push(RequirementStatus {
+                name: "Node.js".to_string(),
+                available: false,
+                path: None,
+                error: Some(format!("Node.js not found: {}", err)),
+            });
+        }
+    }
+
+    // Check ffmpeg
+    match which::which("ffmpeg") {
+        Ok(path) => {
+            requirements.push(RequirementStatus {
+                name: "ffmpeg".to_string(),
+                available: true,
+                path: Some(path.to_string_lossy().to_string()),
+                error: None,
+            });
+        }
+        Err(err) => {
+            all_available = false;
+            requirements.push(RequirementStatus {
+                name: "ffmpeg".to_string(),
+                available: false,
+                path: None,
+                error: Some(format!("ffmpeg not found: {}", err)),
+            });
+        }
+    }
+
+    // Check OpenSSL
+    match which::which("openssl") {
+        Ok(path) => {
+            requirements.push(RequirementStatus {
+                name: "OpenSSL".to_string(),
+                available: true,
+                path: Some(path.to_string_lossy().to_string()),
+                error: None,
+            });
+        }
+        Err(err) => {
+            all_available = false;
+            requirements.push(RequirementStatus {
+                name: "OpenSSL".to_string(),
+                available: false,
+                path: None,
+                error: Some(format!("OpenSSL not found: {}", err)),
+            });
+        }
+    }
+
+    Ok(RequirementsCheckResponse {
+        all_available,
+        requirements,
+    })
 }

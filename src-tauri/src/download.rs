@@ -10,7 +10,6 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::fs as tokiofs;
-use tokio::io::AsyncWriteExt;
 
 pub async fn download_episode(
     anime_name: &str,
@@ -202,16 +201,22 @@ fn parse_time_to_millis(input: &str) -> Option<u64> {
     let hours: f64 = parts[0].trim().parse().ok()?;
     let minutes: f64 = parts[1].trim().parse().ok()?;
     let seconds: f64 = parts[2].trim().parse().ok()?;
-    let total_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
-    Some((total_seconds * 1000.0) as u64)
+    let total_ms = (hours * 3600.0 + minutes * 60.0 + seconds) * 1000.0;
+    Some(total_ms as u64)
 }
 
 fn ffmpeg_concat(list_path: &Path, out_file: &Path) -> Result<()> {
     let ffmpeg = which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))?;
     let status = Command::new(ffmpeg)
-        .args(["-f", "concat", "-safe", "0", "-i"])
+        .arg("-f")
+        .arg("concat")
+        .arg("-safe")
+        .arg("0")
+        .arg("-i")
         .arg(list_path)
-        .args(["-c", "copy", "-y"])
+        .arg("-c")
+        .arg("copy")
+        .arg("-y")
         .arg(out_file)
         .status()
         .context("run ffmpeg concat")?;
@@ -221,125 +226,146 @@ fn ffmpeg_concat(list_path: &Path, out_file: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn download_segments(
-    urls: &[String],
-    out_dir: &Path,
-    threads: usize,
-    cookie: &str,
-    host: &str,
-    done_counter: Option<Arc<AtomicUsize>>,
-) -> Result<()> {
-    let client = client();
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(threads as usize));
-    let host = host.to_string();
-    let mut futs = FuturesUnordered::new();
-    for url in urls {
-        let done_counter = done_counter.clone();
-        let permit = sem.clone().acquire_owned().await.unwrap();
-        let client = client.clone();
-        let cookie = cookie.to_string();
-        let host = host.clone();
-        let out = out_dir.join(format!(
-            "{}.encrypted",
-            url.split('/').last().unwrap_or("seg")
-        ));
-        let url = url.clone();
-        futs.push(tokio::spawn(async move {
-            let _p = permit;
-            let res = client
-                .get(&url)
-                .header(reqwest::header::REFERER, &host)
-                .header(reqwest::header::COOKIE, &cookie)
-                .send()
-                .await
-                .and_then(|r| r.error_for_status())
-                .map_err(|e| anyhow!(e.to_string()));
-            match res {
-                Ok(resp) => {
-                    let bytes = resp.bytes().await.map_err(|e| anyhow!(e.to_string()))?;
-                    let mut f = tokiofs::File::create(&out)
-                        .await
-                        .map_err(|e| anyhow!(e.to_string()))?;
-                    f.write_all(&bytes)
-                        .await
-                        .map_err(|e| anyhow!(e.to_string()))?;
-                    if let Some(dc) = &done_counter {
-                        dc.fetch_add(1, Ordering::Relaxed);
-                    }
-                    Ok::<(), anyhow::Error>(())
-                }
-                Err(e) => Err(e),
-            }
-        }));
-    }
-    while let Some(res) = futs.next().await {
-        res??;
-    }
-    Ok(())
-}
-
-async fn decrypt_segments(out_dir: &Path, key_hex: &str) -> Result<()> {
-    let openssl = which::which("openssl")
-        .map_err(|_| anyhow!("openssl not found; required for parallel decrypt"))?;
-    for entry in fs::read_dir(out_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("encrypted") {
-            let mut out = path.clone();
-            out.set_extension("");
-            let status = Command::new(&openssl)
-                .args(["aes-128-cbc", "-d", "-K", key_hex, "-iv", "0", "-in"])
-                .arg(&path)
-                .args(["-out"])
-                .arg(&out)
-                .status()
-                .context("run openssl")?;
-            if !status.success() {
-                return Err(anyhow!("openssl failed on {:?}", path));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn extract_key_uri(playlist: &str) -> Option<String> {
-    // Example: #EXT-X-KEY:METHOD=AES-128,URI="https://.../key"
-    let re = Regex::new(r#"#EXT-X-KEY:METHOD=([^,]+),URI=\"([^\"]+)\""#).unwrap();
-    re.captures(playlist)
-        .and_then(|c| c.get(2).map(|m| m.as_str().to_string()))
-}
-
 async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> Result<()> {
-    let client = client();
-    let mut file = tokiofs::File::create(path).await?;
-    let mut resp = client
+    let client = create_client();
+    let resp = client
         .get(url)
         .header(reqwest::header::REFERER, host)
         .header(reqwest::header::COOKIE, cookie)
         .send()
         .await?
         .error_for_status()?;
-    while let Some(chunk) = resp.chunk().await? {
-        file.write_all(&chunk).await?;
-    }
+    let content = resp.bytes().await?;
+    tokiofs::write(path, content).await?;
     Ok(())
 }
 
 async fn download_bytes(url: &str, cookie: &str, host: &str) -> Result<Vec<u8>> {
-    let client = client();
-    let bytes = client
+    let client = create_client();
+    let resp = client
         .get(url)
         .header(reqwest::header::REFERER, host)
         .header(reqwest::header::COOKIE, cookie)
         .send()
         .await?
         .error_for_status()?;
-    Ok(bytes.bytes().await?.to_vec())
+    Ok(resp.bytes().await?.to_vec())
 }
 
-fn client() -> Client {
+async fn download_segments(
+    seg_urls: &[String],
+    work_dir: &Path,
+    threads: usize,
+    cookie: &str,
+    host: &str,
+    progress_done: Option<Arc<AtomicUsize>>,
+) -> Result<()> {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(threads));
+    let mut handles = FuturesUnordered::new();
+
+    for (i, url) in seg_urls.iter().enumerate() {
+        let sem = semaphore.clone();
+        let url = url.clone();
+        let cookie = cookie.to_string();
+        let host = host.to_string();
+        let work_dir = work_dir.to_path_buf();
+        let progress_done = progress_done.clone();
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem.acquire().await?;
+            let seg_path = work_dir.join(format!("seg_{:06}.ts", i));
+            download_to_file(&url, &seg_path, &cookie, &host).await?;
+            if let Some(done) = progress_done {
+                done.fetch_add(1, Ordering::Relaxed);
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+
+        handles.push(handle);
+    }
+
+    while let Some(result) = handles.next().await {
+        result??;
+    }
+
+    Ok(())
+}
+
+fn extract_key_uri(content: &str) -> Option<String> {
+    let re = Regex::new(r#"#EXT-X-KEY:.*URI="([^"]+)""#).ok()?;
+    re.captures(content)?.get(1).map(|m| m.as_str().to_string())
+}
+
+async fn decrypt_segments(work_dir: &Path, key_hex: &str) -> Result<()> {
+    let key_bytes = hex::decode(key_hex)?;
+    let entries = fs::read_dir(work_dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) == Some("ts") {
+            let content = tokiofs::read(&path).await?;
+            let decrypted = decrypt_aes128_cbc(&content, &key_bytes)?;
+
+            let encrypted_path = path.with_extension("encrypted");
+            tokiofs::rename(&path, &encrypted_path).await?;
+
+            let decrypted_path = encrypted_path.with_extension("");
+            tokiofs::write(&decrypted_path, decrypted).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn decrypt_aes128_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+    if data.len() < 16 {
+        return Err(anyhow!("Data too short for AES decryption"));
+    }
+
+    // Use the first 16 bytes as IV
+    let iv = &data[..16];
+    let encrypted = &data[16..];
+
+    // Simple AES-128-CBC decryption using openssl command
+    let output = std::process::Command::new("openssl")
+        .args(&[
+            "enc",
+            "-aes-128-cbc",
+            "-d",
+            "-K",
+            &hex::encode(key),
+            "-iv",
+            &hex::encode(iv),
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let mut child = output;
+    if let Some(stdin) = child.stdin.take() {
+        use std::io::Write;
+        let mut stdin = stdin;
+        stdin.write_all(encrypted)?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "OpenSSL decryption failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(output.stdout)
+}
+
+fn create_client() -> Client {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .expect("client")
+        .expect("Failed to create HTTP client")
 }

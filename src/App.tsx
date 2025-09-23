@@ -9,6 +9,7 @@ import {
   fetchEpisodes,
   previewSources,
   startDownload,
+  checkRequirements,
 } from "./api";
 import type {
   Settings,
@@ -17,6 +18,7 @@ import type {
   PreviewItem,
   DownloadStatusEvent,
   DownloadProgressEvent,
+  RequirementsCheckResponse,
 } from "./types";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
@@ -42,6 +44,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
+import { RequirementsDialog } from "./components/RequirementsDialog";
 
 const defaultSettings: Settings = {
   downloadDir: null,
@@ -89,6 +92,8 @@ export default function App() {
   const [progressMap, setProgressMap] = useState<ProgressMap>({});
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requirements, setRequirements] = useState<RequirementsCheckResponse | null>(null);
+  const [requirementsDialogOpen, setRequirementsDialogOpen] = useState(false);
 
   const slugMissing = slug.trim().length === 0;
 
@@ -96,6 +101,18 @@ export default function App() {
     loadSettings()
       .then(setSettings)
       .catch((err) => console.error("Failed to load settings", err));
+  }, []);
+
+  useEffect(() => {
+    // Check requirements on app startup
+    checkRequirements()
+      .then((reqs) => {
+        setRequirements(reqs);
+        if (!reqs.allAvailable) {
+          setRequirementsDialogOpen(true);
+        }
+      })
+      .catch((err) => console.error("Failed to check requirements", err));
   }, []);
 
   useEffect(() => {
@@ -335,7 +352,21 @@ export default function App() {
       });
     } catch (err) {
       console.error(err);
-      setError(String(err));
+      const errorMessage = String(err);
+      setError(errorMessage);
+
+      // If the error mentions missing dependencies, check requirements and show dialog
+      if (errorMessage.includes("Missing required dependencies")) {
+        try {
+          const reqs = await checkRequirements();
+          setRequirements(reqs);
+          if (!reqs.allAvailable) {
+            setRequirementsDialogOpen(true);
+          }
+        } catch (reqErr) {
+          console.error("Failed to check requirements after download error:", reqErr);
+        }
+      }
     }
   };
 
@@ -675,6 +706,13 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <RequirementsDialog
+        open={requirementsDialogOpen}
+        onOpenChange={setRequirementsDialogOpen}
+        requirements={requirements}
+        onRequirementsUpdate={setRequirements}
+      />
     </div>
   );
 }

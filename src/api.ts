@@ -5,6 +5,7 @@ import type {
   FetchEpisodesResponse,
   PreviewItem,
   EpisodeInfo,
+  RequirementsCheckResponse,
 } from "./types";
 
 export async function loadSettings(): Promise<Settings> {
@@ -102,6 +103,24 @@ function normalizeSettings(raw: AppSettingsRaw): Settings {
     themeDark: raw.theme_dark,
     hostUrl: raw.host_url,
   };
+}
+
+export async function checkRequirements(): Promise<RequirementsCheckResponse> {
+  const raw = await invoke<RequirementsCheckResponseRaw>("check_requirements");
+  return {
+    allAvailable: raw.all_available,
+    requirements: raw.requirements,
+  };
+}
+
+interface RequirementsCheckResponseRaw {
+  all_available: boolean;
+  requirements: Array<{
+    name: string;
+    available: boolean;
+    path?: string | null;
+    error?: string | null;
+  }>;
 }
 
 function emptyToNull(value?: string): string | null | undefined {

@@ -31,6 +31,16 @@ Install on your machine before building:
 - [ffmpeg](https://ffmpeg.org/)
 - [OpenSSL CLI](https://www.openssl.org/) (needed when Threads > 1)
 
+### Detailed Installation Guides
+
+For detailed, OS-specific installation instructions for each requirement:
+
+- **[Node.js Installation Guide](requirements/NodeJS.md)** - Required for JavaScript deobfuscation
+- **[FFmpeg Installation Guide](requirements/FFMPEG.md)** - Required for video processing
+- **[OpenSSL Installation Guide](requirements/OpenSSL.md)** - Required for encrypted content (multi-threaded downloads only)
+
+The application will automatically check for these dependencies and show installation instructions if any are missing.
+
 ## Quick Start
 
 ```bash

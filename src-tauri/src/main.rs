@@ -18,7 +18,8 @@ fn main() {
             commands::search_anime,
             commands::fetch_episodes,
             commands::preview_sources,
-            commands::start_download
+            commands::start_download,
+            commands::check_requirements
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

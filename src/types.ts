@@ -41,3 +41,15 @@ export interface DownloadProgressEvent {
   done: number;
   total: number;
 }
+
+export interface RequirementStatus {
+  name: string;
+  available: boolean;
+  path?: string | null;
+  error?: string | null;
+}
+
+export interface RequirementsCheckResponse {
+  allAvailable: boolean;
+  requirements: RequirementStatus[];
+}
