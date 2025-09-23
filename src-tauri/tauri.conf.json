@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Animepahe DL Desktop",
         "width": 1280,
         "height": 800,
@@ -26,7 +27,8 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": ["default"]
     }
   },
   "bundle": {
@@ -88,9 +90,5 @@
       }
     }
   },
-  "plugins": {
-    "dialog": {
-      "all": true
-    }
-  }
+  "plugins": {}
 }
