@@ -20,3 +20,4 @@ vendor/*
 *.dmg
 *.sh
 *.app
+.claude/

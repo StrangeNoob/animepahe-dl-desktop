@@ -60,8 +60,7 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
       "wix": {
-        "language": "en-US",
-        "template": "main.wxs"
+        "language": "en-US"
       },
       "nsis": {
         "displayLanguageSelector": false,
@@ -69,8 +68,7 @@
         "installMode": "currentUser",
         "languages": [
           "English"
-        ],
-        "template": "installer.nsi"
+        ]
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
