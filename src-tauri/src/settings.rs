@@ -16,7 +16,7 @@ impl Default for AppSettings {
         Self {
             download_dir: None,
             theme_dark: true,
-            host_url: "https://animepahe.ru".into(),
+            host_url: "https://animepahe.si".into(),
         }
     }
 }
@@ -86,7 +86,7 @@ fn gen_cookie() -> String {
 pub fn normalize_host(input: &str) -> String {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        "https://animepahe.ru".into()
+        "https://animepahe.si".into()
     } else {
         trimmed.trim_end_matches('/').to_string()
     }
