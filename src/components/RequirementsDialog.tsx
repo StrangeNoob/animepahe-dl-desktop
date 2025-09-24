@@ -47,8 +47,8 @@ export function RequirementsDialog({ open, onOpenChange, requirements, onRequire
   const availableRequirements = requirements.requirements.filter(req => req.available);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={requirements.allAvailable ? onOpenChange : undefined}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" onEscapeKeyDown={requirements.allAvailable ? undefined : (e) => e.preventDefault()} onPointerDownOutside={requirements.allAvailable ? undefined : (e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {requirements.allAvailable ? (

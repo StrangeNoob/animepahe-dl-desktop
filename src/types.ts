@@ -2,6 +2,7 @@ export interface Settings {
   downloadDir: string | null;
   themeDark: boolean;
   hostUrl: string;
+  tourCompleted: boolean;
 }
 
 export interface SearchItem {
@@ -52,4 +53,29 @@ export interface RequirementStatus {
 export interface RequirementsCheckResponse {
   allAvailable: boolean;
   requirements: RequirementStatus[];
+}
+
+export interface TourStep {
+  id: string;
+  title: string;
+  content: string;
+  target?: string;
+  placement?: "top" | "bottom" | "left" | "right";
+  allowClicksThruHole?: boolean;
+}
+
+export interface TourState {
+  isActive: boolean;
+  currentStep: number;
+  steps: TourStep[];
+}
+
+export interface TourContextType {
+  tourState: TourState;
+  startTour: () => void;
+  endTour: () => void;
+  nextStep: () => void;
+  prevStep: () => void;
+  goToStep: (step: number) => void;
+  skipTour: () => void;
 }

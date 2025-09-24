@@ -42,14 +42,18 @@ import {
   MonitorPlay,
   Search as SearchIcon,
   Sparkles,
+  HelpCircle,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
 import { RequirementsDialog } from "./components/RequirementsDialog";
+import { TourProvider } from "./components/tour/TourProvider";
+import { useTour } from "./components/tour/TourProvider";
 
 const defaultSettings: Settings = {
   downloadDir: null,
   themeDark: true,
   hostUrl: "https://animepahe.ru",
+  tourCompleted: false,
 };
 
 const RESOLUTION_PRESETS = ["1080", "720", "480", "360", "240"] as const;
@@ -68,7 +72,8 @@ interface ProgressMap {
   };
 }
 
-export default function App() {
+function AppContent() {
+  const { startTour } = useTour();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
@@ -99,9 +104,15 @@ export default function App() {
 
   useEffect(() => {
     loadSettings()
-      .then(setSettings)
+      .then((loadedSettings) => {
+        setSettings(loadedSettings);
+        // Auto-start tour for first-time users
+        if (!loadedSettings.tourCompleted) {
+          setTimeout(() => startTour(), 1000);
+        }
+      })
       .catch((err) => console.error("Failed to load settings", err));
-  }, []);
+  }, [startTour]);
 
   useEffect(() => {
     // Check requirements on app startup
@@ -382,10 +393,22 @@ export default function App() {
               <div className="flex items-center gap-2 text-xl font-semibold">
                 <Sparkles className="h-5 w-5 text-primary" />
                 Animepahe DL Desktop
+                {(
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={startTour}
+                    className="ml-2 text-xs"
+                    data-tour-trigger
+                  >
+                    <HelpCircle className="h-3 w-3 mr-1" />
+                    Take Tour
+                  </Button>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">Search, preview, and download anime with neon flair.</p>
             </div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center" data-tour="settings-section">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Light</span>
                 <Switch checked={settings.themeDark} onCheckedChange={toggleTheme} />
@@ -423,29 +446,31 @@ export default function App() {
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 <label className="text-sm text-muted-foreground">Anime</label>
-                <Autocomplete
-                  value={selectedAnime?.session ?? null}
-                  onChange={(option) => {
-                    if (!option) {
-                      handleSearchInput("", "input");
-                      setSelectedAnime(null);
-                      setSlug("");
-                      return;
-                    }
-                    const match = searchResults.find((item) => item.session === option.value);
-                    if (match) {
-                      handleSearchInput(match.title, "selection");
-                      handleSelectAnime(match);
-                    } else {
-                      handleSearchInput(option.label, "selection");
-                      handleSelectAnime({ session: option.value, title: option.label });
-                    }
-                  }}
-                  query={searchQuery}
-                  onQueryChange={(value) => handleSearchInput(value, "input")}
-                  items={autocompleteItems}
-                  isLoading={searchLoading}
-                />
+                <div data-tour="search-input">
+                  <Autocomplete
+                    value={selectedAnime?.session ?? null}
+                    onChange={(option) => {
+                      if (!option) {
+                        handleSearchInput("", "input");
+                        setSelectedAnime(null);
+                        setSlug("");
+                        return;
+                      }
+                      const match = searchResults.find((item) => item.session === option.value);
+                      if (match) {
+                        handleSearchInput(match.title, "selection");
+                        handleSelectAnime(match);
+                      } else {
+                        handleSearchInput(option.label, "selection");
+                        handleSelectAnime({ session: option.value, title: option.label });
+                      }
+                    }}
+                    query={searchQuery}
+                    onQueryChange={(value) => handleSearchInput(value, "input")}
+                    items={autocompleteItems}
+                    isLoading={searchLoading}
+                  />
+                </div>
                 {selectedAnime ? (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">chibi ✓</span>
@@ -466,7 +491,7 @@ export default function App() {
                   placeholder="1,3-5,*"
                 />
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Resolution</label>
                   <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
@@ -532,7 +557,7 @@ export default function App() {
                 </div>
                 <Switch checked={listOnly} onCheckedChange={(checked) => setListOnly(checked)} />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1" data-tour="output-folder">
                 <label className="text-sm text-muted-foreground">Output folder</label>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="flex-1 truncate rounded-md border border-border/60 bg-background/60 px-3 py-2">
@@ -549,13 +574,13 @@ export default function App() {
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <Button onClick={handleFetchEpisodes} disabled={isBusy || slugMissing}>
+                <Button onClick={handleFetchEpisodes} disabled={isBusy || slugMissing} data-tour="fetch-button">
                   Fetch episodes
                 </Button>
-                <Button variant="outline" onClick={handlePreview} disabled={isBusy || slugMissing}>
+                <Button variant="outline" onClick={handlePreview} disabled={isBusy || slugMissing} data-tour="preview-button">
                   Preview sources
                 </Button>
-                <Button variant="default" onClick={handleDownload} disabled={slugMissing} className="sm:col-span-2">
+                <Button variant="default" onClick={handleDownload} disabled={slugMissing} className="sm:col-span-2" data-tour="download-button">
                   Download
                 </Button>
               </div>
@@ -563,7 +588,7 @@ export default function App() {
             </CardContent>
           </Card>
 
-          <Card className="xl:col-span-1 glass-card overflow-visible">
+          <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="episodes-section">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <MonitorPlay className="h-5 w-5 text-cyan-300" />
@@ -622,7 +647,7 @@ export default function App() {
             </CardContent>
           </Card>
 
-          <Card className="xl:col-span-1 glass-card overflow-visible">
+          <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="download-status">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <DownloadCloud className="h-5 w-5 text-pink-400" />
@@ -667,42 +692,42 @@ export default function App() {
             <DialogDescription>Review audio/resolution combinations before downloading.</DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
-              {previewData?.map((item) => (
-                <div key={item.episode} className="space-y-3">
-                  <h4 className="flex items-center gap-2 text-base font-semibold">
-                    <ListChecks className="h-4 w-4 text-primary" /> Episode {item.episode}
-                  </h4>
-                  {item.sources.length === 0 ? (
-                    <EmptyState
-                      icon={<FolderSearch className="h-8 w-8 text-primary" />}
-                      title="No sources found"
-                      message="Try another resolution or audio preference."
-                      compact
-                    />
-                  ) : (
-                    <div className="overflow-hidden rounded-lg border border-border/60">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/40">
-                          <tr className="text-left text-muted-foreground">
-                            <th className="px-3 py-2 font-medium">Audio</th>
-                            <th className="px-3 py-2 font-medium">Resolution</th>
-                            <th className="px-3 py-2 font-medium">URL</th>
+            {previewData?.map((item) => (
+              <div key={item.episode} className="space-y-3">
+                <h4 className="flex items-center gap-2 text-base font-semibold">
+                  <ListChecks className="h-4 w-4 text-primary" /> Episode {item.episode}
+                </h4>
+                {item.sources.length === 0 ? (
+                  <EmptyState
+                    icon={<FolderSearch className="h-8 w-8 text-primary" />}
+                    title="No sources found"
+                    message="Try another resolution or audio preference."
+                    compact
+                  />
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-border/60">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/40">
+                        <tr className="text-left text-muted-foreground">
+                          <th className="px-3 py-2 font-medium">Audio</th>
+                          <th className="px-3 py-2 font-medium">Resolution</th>
+                          <th className="px-3 py-2 font-medium">URL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {item.sources.map((source, idx) => (
+                          <tr key={idx} className="border-t border-border/40">
+                            <td className="px-3 py-2">{source.audio ?? "-"}</td>
+                            <td className="px-3 py-2">{source.resolution ?? "-"}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{source.src}</td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {item.sources.map((source, idx) => (
-                            <tr key={idx} className="border-t border-border/40">
-                              <td className="px-3 py-2">{source.audio ?? "-"}</td>
-                              <td className="px-3 py-2">{source.resolution ?? "-"}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{source.src}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              ))}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>
@@ -738,5 +763,27 @@ function EmptyState({ icon, title, message, compact }: EmptyStateProps) {
       <h4 className="text-sm font-semibold text-foreground">{title}</h4>
       <p className="mt-1 text-xs text-muted-foreground">{message}</p>
     </div>
+  );
+}
+
+export default function App() {
+  const [settings, setSettings] = useState<Settings>(defaultSettings);
+
+  // Load settings on initial mount for the provider
+  useEffect(() => {
+    loadSettings()
+      .then(setSettings)
+      .catch((err) => console.error("Failed to load settings", err));
+  }, []);
+
+  const handleSettingsUpdate = async (newSettings: Settings) => {
+    setSettings(newSettings);
+    await saveSettings(newSettings);
+  };
+
+  return (
+    <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
+      <AppContent />
+    </TourProvider>
   );
 }

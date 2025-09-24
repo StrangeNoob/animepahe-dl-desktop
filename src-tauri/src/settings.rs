@@ -9,6 +9,8 @@ pub struct AppSettings {
     pub download_dir: Option<String>,
     pub theme_dark: bool,
     pub host_url: String,
+    #[serde(default)]
+    pub tour_completed: bool,
 }
 
 impl Default for AppSettings {
@@ -17,6 +19,7 @@ impl Default for AppSettings {
             download_dir: None,
             theme_dark: true,
             host_url: "https://animepahe.si".into(),
+            tour_completed: false,
         }
     }
 }

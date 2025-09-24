@@ -18,6 +18,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
     download_dir: settings.downloadDir,
     theme_dark: settings.themeDark,
     host_url: settings.hostUrl,
+    tour_completed: settings.tourCompleted,
   };
   await invoke("save_settings", { settings: payload });
 }
@@ -90,6 +91,7 @@ interface AppSettingsRaw {
   download_dir: string | null;
   theme_dark: boolean;
   host_url: string;
+  tour_completed: boolean;
 }
 
 interface FetchEpisodesResponseRaw {
@@ -102,6 +104,7 @@ function normalizeSettings(raw: AppSettingsRaw): Settings {
     downloadDir: raw.download_dir,
     themeDark: raw.theme_dark,
     hostUrl: raw.host_url,
+    tourCompleted: raw.tour_completed ?? false,
   };
 }
 
