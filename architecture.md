@@ -38,7 +38,7 @@ Animepahe DL Desktop wraps the original CLI downloader in a cross-platform deskt
 - **Entry**: `src-tauri/src/main.rs` wires plugins (dialog) and registers command handlers.
 - **State management**: `settings.rs` handles JSON persistence under the OS config directory and tracks a generated Animepahe cookie for consistent sessions.
 - **HTTP API wrapper**: `api.rs` uses `reqwest` to call Animepahe endpoints, expand episode specs, and resolve playlist metadata.
-- **Scraper**: `scrape.rs` parses the play page, filters AV1 streams, and shells out to Node.js (under a 15s timeout) to deobfuscate the embedded playlist URL.
+- **Scraper**: `scrape.rs` parses the play page, filters AV1 streams, and uses an embedded QuickJS runtime to deobfuscate the playlist without needing external binaries.
 - **Downloader**: `download.rs` implements both single-thread (`ffmpeg` copy) and multi-thread segment download/decrypt pipelines. Progress is surfaced through shared atomics and emitted as `download-progress` events.
 - **Command orchestration**: `commands.rs` stitches everything together: preflight dependency checks, fetching, previewing, and the download loop that handles errors per episode while streaming user-facing status.
 
@@ -46,7 +46,7 @@ Animepahe DL Desktop wraps the original CLI downloader in a cross-platform deskt
 1. **Validation**: `check_requirements` asserts `node` and `ffmpeg` exist; failures short-circuit with a descriptive error the UI can surface.
 2. **Episode resolution**: Selected numbers or spec patterns expand to concrete episode IDs, reusing cached release data where possible.
 3. **Source selection**: `scrape::extract_candidates` scrapes candidate streams; `select_candidate` prefers requested audio/resolution, favouring kwik hosts.
-4. **Playlist extraction**: `scrape::extract_m3u8_from_link` runs Node.js against the obfuscated JavaScript to uncover the `.m3u8` URL.
+4. **Playlist extraction**: `scrape::extract_m3u8_from_link` runs the obfuscated JavaScript inside the bundled QuickJS engine to uncover the `.m3u8` URL.
 5. **Transfer**:
    - *Single-thread*: Launch `ffmpeg` with custom headers; parse stderr to infer duration-based progress.
    - *Multi-thread*: Download playlist + TS chunks concurrently, optionally decrypt each segment with OpenSSL, then concatenate via `ffmpeg -f concat`.
@@ -59,7 +59,7 @@ Animepahe DL Desktop wraps the original CLI downloader in a cross-platform deskt
 
 ## External Dependencies
 - **Animepahe endpoints**: `/api?m=search`, `/api?m=release`, and anime pages for title resolution.
-- **System binaries**: `ffmpeg` (HLS mux) and `node` (JavaScript deobfuscation). Presence is checked dynamically using `which`.
+- **System binaries**: `ffmpeg` (HLS mux). Presence is checked dynamically using `which`.
 - **Tokio runtime**: Powers async tasks, downloads, and timed operations.
 
 ## Build & Packaging

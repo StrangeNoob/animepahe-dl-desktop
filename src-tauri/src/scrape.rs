@@ -1,10 +1,11 @@
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use quick_js::{Context as JsContext, ExecutionError, JsValue};
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
-use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::{sync::{Arc, Mutex}, time::Duration};
 use tokio::time::timeout;
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,41 +130,63 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
 
     eprintln!("Executing JavaScript to extract m3u8...");
 
-    // Execute via Node to unpack with timeout
-    let node =
-        which::which("node").map_err(|_| anyhow!("node not found; required for unpacking"))?;
+    let js_source = js.clone();
 
-    let output = timeout(Duration::from_secs(15), async {
-        let handle = tokio::task::spawn_blocking(move || {
-            Command::new(node)
-                .arg("-e")
-                .arg(js)
-                .stdin(Stdio::null())
-                .output()
-        });
+    let printed = timeout(Duration::from_secs(10), async move {
+        tokio::task::spawn_blocking(move || -> Result<String> {
+            let ctx = JsContext::new()
+                .map_err(|err| anyhow!("Failed to create JavaScript context: {err}"))?;
+            let output = Arc::new(Mutex::new(String::new()));
 
-        let result = match handle.await {
-            Ok(cmd_result) => cmd_result,
-            Err(e) => return Err(anyhow!("Failed to spawn Node.js process: {}", e)),
-        };
+            {
+                let out = Arc::clone(&output);
+                ctx.add_callback("capture_log", move |message: String| -> Result<bool, ExecutionError> {
+                    let mut buffer = out.lock().expect("console log mutex");
+                    buffer.push_str(&message);
+                    buffer.push('\n');
+                    Ok(true)
+                })?;
+                ctx.eval(
+                    "const __fmt = (value) => {
+                        if (value === null) return 'null';
+                        if (value === undefined) return 'undefined';
+                        if (typeof value === 'string') return value;
+                        try { return JSON.stringify(value); } catch (err) { return String(value); }
+                    };
+                    globalThis.console = {
+                        log: (...args) => capture_log(args.map(__fmt).join(' '))
+                    };
+                ",
+                )?;
+            }
 
-        match result {
-            Ok(output) => Ok(output),
-            Err(e) => Err(anyhow!("Failed to execute Node.js: {}", e)),
-        }
+            ctx.add_callback("capture_exit", || -> Result<bool, ExecutionError> { Ok(true) })?;
+            ctx.eval("globalThis.exit = capture_exit;")?;
+            ctx.eval("globalThis.process = {};")?;
+
+            ctx.add_callback("capture_atob", |input: String| -> Result<String, ExecutionError> {
+                let bytes = BASE64_STANDARD
+                    .decode(input.as_bytes())
+                    .map_err(|err| ExecutionError::Exception(JsValue::String(err.to_string())))?;
+                let decoded = String::from_utf8(bytes)
+                    .map_err(|err| ExecutionError::Exception(JsValue::String(err.to_string())))?;
+                Ok(decoded)
+            })?;
+            ctx.eval("globalThis.atob = capture_atob;")?;
+
+            ctx.eval(js_source.as_str())
+                .map_err(|err| anyhow!("JavaScript evaluation failed: {err}"))?;
+
+            let result = output.lock().expect("console log mutex").clone();
+            Ok(result)
+        })
+        .await
+        .map_err(|err| anyhow!("JavaScript execution task failed: {err}"))?
     })
     .await
-    .context("Node.js execution timed out after 15 seconds")?
-    .context("Command execution error")?;
+    .context("JavaScript execution timed out after 10 seconds")??;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("Node.js failed with stderr: {}", stderr);
-        return Err(anyhow!("node failed: {}", stderr));
-    }
-
-    let printed = String::from_utf8_lossy(&output.stdout);
-    eprintln!("Node.js output length: {} bytes", printed.len());
+    eprintln!("JavaScript output length: {} bytes", printed.len());
 
     // Extract m3u8 URL from printed code
     let re2 = Regex::new(r#"source=['\"]([^'\"]+?\.m3u8)"#).unwrap();

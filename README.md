@@ -34,11 +34,11 @@ Install on your machine before building:
 
 For detailed, OS-specific installation instructions for each requirement:
 
-- **[Node.js Installation Guide](requirements/NodeJS.md)** - Required for JavaScript deobfuscation
+- **[Node.js Installation Guide](requirements/NodeJS.md)** - Required for the React/Vite build tooling during development
 - **[FFmpeg Installation Guide](requirements/FFMPEG.md)** - Required for video processing
 - **[OpenSSL Installation Guide](requirements/OpenSSL.md)** - Required for encrypted content (multi-threaded downloads only)
 
-The application will automatically check for these dependencies and show installation instructions if any are missing.
+At runtime the desktop app only depends on `ffmpeg`; Node.js is needed solely for local development/build steps.
 
 ## Quick Start
 

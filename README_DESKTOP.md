@@ -12,7 +12,7 @@ Features
 - Persist theme, host URL, and download directory across launches.
 
 Requirements
-- Node.js (18+) – used for the React front end and for unpacking the obfuscated player script.
+- Node.js (18+) – required only for the React/Vite build tooling; the downloader no longer executes Node at runtime.
 - Rust toolchain – builds the Tauri backend.
 - ffmpeg – required for both streaming and concatenation.
 - macOS note: the project depends on `winit` ≥ 0.30.12 with `objc2`’s `relax-sign-encoding` feature to avoid Sonoma monitor enumeration crashes.
@@ -26,7 +26,7 @@ Notes
 - Cookie: the backend generates a random `__ddg2_` cookie for each session.
 - Host URL: configurable in the toolbar; persisted to the OS config dir.
 - Parallel decrypt assumes IV=0 (matching the shell script behaviour).
-- Without Node on PATH the m3u8 unpacking step will fail; future work could embed a JS engine to remove this dependency.
+- The Rust backend now evaluates the obfuscated player script in an embedded JS engine, so no external Node runtime is needed during downloads.
 
 Troubleshooting
 - Ensure `ffmpeg` and `node` binaries are discoverable on PATH.

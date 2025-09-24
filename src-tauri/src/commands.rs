@@ -423,27 +423,6 @@ pub async fn check_requirements() -> Result<RequirementsCheckResponse, String> {
     let mut requirements = Vec::new();
     let mut all_available = true;
 
-    // Check Node.js
-    match which::which("node") {
-        Ok(path) => {
-            requirements.push(RequirementStatus {
-                name: "Node.js".to_string(),
-                available: true,
-                path: Some(path.to_string_lossy().to_string()),
-                error: None,
-            });
-        }
-        Err(err) => {
-            all_available = false;
-            requirements.push(RequirementStatus {
-                name: "Node.js".to_string(),
-                available: false,
-                path: None,
-                error: Some(format!("Node.js not found: {}", err)),
-            });
-        }
-    }
-
     // Check ffmpeg
     match which::which("ffmpeg") {
         Ok(path) => {
