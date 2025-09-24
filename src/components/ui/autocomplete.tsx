@@ -48,6 +48,7 @@ export function Autocomplete({
 }: AutocompleteProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition>(INITIAL_POSITION);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
@@ -86,7 +87,10 @@ export function Autocomplete({
     if (!open) return;
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (containerRef.current && !containerRef.current.contains(target)) {
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -142,6 +146,7 @@ export function Autocomplete({
 
   const renderedMenu = open ? (
     <DropdownMenu
+      ref={menuRef}
       position={position}
       items={items}
       activeIndex={activeIndex}
@@ -190,7 +195,8 @@ interface DropdownMenuProps {
   isLoading?: boolean;
 }
 
-function DropdownMenu({ position, items, activeIndex, onSelect, emptyMessage, isLoading }: DropdownMenuProps) {
+const DropdownMenu = React.forwardRef<HTMLDivElement, DropdownMenuProps>(
+  ({ position, items, activeIndex, onSelect, emptyMessage, isLoading }, ref) => {
   const style: React.CSSProperties = {
     position: "absolute",
     top: position.top,
@@ -201,6 +207,7 @@ function DropdownMenu({ position, items, activeIndex, onSelect, emptyMessage, is
 
   return (
     <div
+      ref={ref}
       style={style}
       className="overflow-hidden rounded-2xl border border-white/12 bg-[#0b061d]/95 shadow-[0_30px_90px_-50px_rgba(59,130,246,0.85)] backdrop-blur-2xl"
     >
@@ -216,7 +223,6 @@ function DropdownMenu({ position, items, activeIndex, onSelect, emptyMessage, is
             <button
               key={option.value}
               type="button"
-              onMouseDown={(event) => event.preventDefault()}
               onClick={() => onSelect(option)}
               className={cn(
                 "flex w-full flex-col items-start gap-1 px-4 py-3 text-left text-sm text-foreground transition",
@@ -235,4 +241,6 @@ function DropdownMenu({ position, items, activeIndex, onSelect, emptyMessage, is
       </div>
     </div>
   );
-}
+});
+
+DropdownMenu.displayName = "DropdownMenu";
