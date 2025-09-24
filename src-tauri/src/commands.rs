@@ -217,7 +217,7 @@ pub async fn start_download(
         .download_dir
         .as_ref()
         .map(|p| std::path::PathBuf::from(p));
-    let threads = req.threads.max(1);
+    let threads = req.threads.max(2);
     let spec = req.episodes_spec.clone().unwrap_or_default();
     let selected = req.selected.clone();
     tauri::async_runtime::spawn(async move {
@@ -327,6 +327,16 @@ pub async fn start_download(
                     }
                 };
 
+            eprintln!("Playlist extraction completed for episode {}, starting download process", episode);
+
+            let _ = window.emit(
+                "download-status",
+                StatusPayload {
+                    episode,
+                    status: "Downloading".into(),
+                },
+            );
+
             if req.list_only {
                 let _ = window.emit(
                     "download-status",
@@ -366,11 +376,13 @@ pub async fn start_download(
                 }
             });
 
+            eprintln!("Starting download_episode function for episode {}", episode);
+
             let status = download::download_episode(
                 &anime_name,
                 episode,
                 &playlist,
-                threads,
+        threads,
                 &cookie,
                 download_dir.as_deref(),
                 &host,
@@ -449,27 +461,6 @@ pub async fn check_requirements() -> Result<RequirementsCheckResponse, String> {
                 available: false,
                 path: None,
                 error: Some(format!("ffmpeg not found: {}", err)),
-            });
-        }
-    }
-
-    // Check OpenSSL
-    match which::which("openssl") {
-        Ok(path) => {
-            requirements.push(RequirementStatus {
-                name: "OpenSSL".to_string(),
-                available: true,
-                path: Some(path.to_string_lossy().to_string()),
-                error: None,
-            });
-        }
-        Err(err) => {
-            all_available = false;
-            requirements.push(RequirementStatus {
-                name: "OpenSSL".to_string(),
-                available: false,
-                path: None,
-                error: Some(format!("OpenSSL not found: {}", err)),
             });
         }
     }

@@ -86,7 +86,7 @@ function AppContent() {
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
-  const [threads, setThreads] = useState(1);
+  const [threads, setThreads] = useState(2);
   const [listOnly, setListOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
@@ -543,10 +543,12 @@ function AppContent() {
                   <label className="text-xs text-muted-foreground">Threads</label>
                   <Input
                     type="number"
-                    min={1}
+                    min={2}
                     max={64}
                     value={threads}
-                    onChange={(e) => setThreads(Math.min(64, Math.max(1, Number(e.target.value))))}
+                    onChange={(e) =>
+                      setThreads(Math.min(64, Math.max(2, Number(e.target.value) || 2)))
+                    }
                   />
                 </div>
               </div>

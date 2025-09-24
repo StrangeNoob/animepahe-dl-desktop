@@ -15,7 +15,6 @@ Requirements
 - Node.js (18+) – used for the React front end and for unpacking the obfuscated player script.
 - Rust toolchain – builds the Tauri backend.
 - ffmpeg – required for both streaming and concatenation.
-- openssl (CLI) – required for multi-thread segment decryption.
 - macOS note: the project depends on `winit` ≥ 0.30.12 with `objc2`’s `relax-sign-encoding` feature to avoid Sonoma monitor enumeration crashes.
 
 Build
@@ -30,8 +29,8 @@ Notes
 - Without Node on PATH the m3u8 unpacking step will fail; future work could embed a JS engine to remove this dependency.
 
 Troubleshooting
-- Ensure `ffmpeg`, `openssl`, and `node` binaries are discoverable on PATH.
-- If downloads stall, switch to single-thread mode which delegates to ffmpeg entirely.
+- Ensure `ffmpeg` and `node` binaries are discoverable on PATH.
+- If downloads appear stalled, watch the console: decrypt and concat phases now log progress so you can confirm the job is still running.
 
 Distribution
 - Run `npm run tauri build` on each target OS. Artifacts are emitted under `src-tauri/target/release/bundle/`.

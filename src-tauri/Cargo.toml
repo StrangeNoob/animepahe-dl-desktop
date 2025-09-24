@@ -26,6 +26,8 @@ sanitize-filename = "0.5"
 hex = "0.4"
 futures = "0.3"
 rfd = "0.14"
+aes = "0.8"
+cbc = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = "0.30.12"

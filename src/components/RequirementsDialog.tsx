@@ -16,7 +16,6 @@ interface RequirementsDialogProps {
 const REQUIREMENT_LINKS = {
   "Node.js": "https://github.com/StrangeNoob/animepahe-dl-desktop/blob/main/requirements/NodeJS.md",
   "ffmpeg": "https://github.com/StrangeNoob/animepahe-dl-desktop/blob/main/requirements/FFMPEG.md",
-  "OpenSSL": "https://github.com/StrangeNoob/animepahe-dl-desktop/blob/main/requirements/OpenSSL.md",
 } as const;
 
 export function RequirementsDialog({ open, onOpenChange, requirements, onRequirementsUpdate }: RequirementsDialogProps) {

@@ -3,7 +3,9 @@ use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+use tokio::time::timeout;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Candidate {
@@ -81,23 +83,37 @@ pub fn select_candidate<'a>(
 }
 
 pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> Result<String> {
+    eprintln!("Extracting m3u8 from: {}", ep_link);
+
     let client = client();
-    let text = client
-        .get(ep_link)
-        .header(reqwest::header::REFERER, host)
-        .header(reqwest::header::COOKIE, cookie)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+
+    // Add timeout to HTTP request
+    let text = timeout(Duration::from_secs(30), async {
+        client
+            .get(ep_link)
+            .header(reqwest::header::REFERER, host)
+            .header(reqwest::header::COOKIE, cookie)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await
+    })
+    .await
+    .context("HTTP request timed out after 30 seconds")?
+    .context("Failed to fetch page content")?;
+
+    eprintln!("Downloaded page content, length: {} bytes", text.len());
 
     // Find script with eval(
     let re = Regex::new(r"<script>eval\((?s).*?</script>").unwrap();
     let caps = re
         .find(&text)
-        .ok_or_else(|| anyhow!("No eval script found"))?;
+        .ok_or_else(|| anyhow!("No eval script found in page content"))?;
     let mut script = &text[caps.start()..caps.end()];
+
+    eprintln!("Found eval script, length: {} bytes", script.len());
+
     // Trim <script> and </script>
     if let Some(pos) = script.find("<script>") {
         script = &script[pos + 8..];
@@ -111,34 +127,61 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
     js = js.replace("querySelector", "exit");
     js = js.replace("eval(", "console.log(");
 
-    // Execute via Node to unpack
+    eprintln!("Executing JavaScript to extract m3u8...");
+
+    // Execute via Node to unpack with timeout
     let node =
         which::which("node").map_err(|_| anyhow!("node not found; required for unpacking"))?;
-    let output = Command::new(node)
-        .arg("-e")
-        .arg(js)
-        .output()
-        .context("running node")?;
+
+    let output = timeout(Duration::from_secs(15), async {
+        let handle = tokio::task::spawn_blocking(move || {
+            Command::new(node)
+                .arg("-e")
+                .arg(js)
+                .stdin(Stdio::null())
+                .output()
+        });
+
+        let result = match handle.await {
+            Ok(cmd_result) => cmd_result,
+            Err(e) => return Err(anyhow!("Failed to spawn Node.js process: {}", e)),
+        };
+
+        match result {
+            Ok(output) => Ok(output),
+            Err(e) => Err(anyhow!("Failed to execute Node.js: {}", e)),
+        }
+    })
+    .await
+    .context("Node.js execution timed out after 15 seconds")?
+    .context("Command execution error")?;
+
     if !output.status.success() {
-        return Err(anyhow!(
-            "node failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("Node.js failed with stderr: {}", stderr);
+        return Err(anyhow!("node failed: {}", stderr));
     }
+
     let printed = String::from_utf8_lossy(&output.stdout);
+    eprintln!("Node.js output length: {} bytes", printed.len());
 
     // Extract m3u8 URL from printed code
     let re2 = Regex::new(r#"source=['\"]([^'\"]+?\.m3u8)"#).unwrap();
     if let Some(c) = re2.captures(&printed) {
         let url = c.get(1).unwrap().as_str().to_string();
+        eprintln!("Successfully extracted m3u8 URL: {}", url);
         return Ok(url);
     }
-    Err(anyhow!("m3u8 source not found"))
+
+    eprintln!("Failed to find m3u8 URL in output: {}", printed);
+    Err(anyhow!("m3u8 source not found in unpacked JavaScript"))
 }
 
 fn client() -> Client {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36")
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
         .build()
         .expect("client")
 }

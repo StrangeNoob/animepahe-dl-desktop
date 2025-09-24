@@ -20,7 +20,7 @@ Animepahe DL Desktop is now a Tauri + React application with a Rust backend. It 
 - Neon-glassmorphism desktop UI with gradient accents and vector icons
 - Rust 2021 backend with `tokio`, `reqwest`, `scraper`, and `regex`
 - macOS crash fix via `winit` ≥ 0.30.12 and `objc2` + `objc2-foundation` built with the `relax-sign-encoding` feature
-- External binaries: `ffmpeg`, `node`, `openssl` (detected at runtime)
+- External binaries: `ffmpeg`, `node` (detected at runtime)
 
 ## Prerequisites
 
@@ -29,7 +29,6 @@ Install on your machine before building:
 - [Rust toolchain](https://rustup.rs/) (stable channel)
 - [Node.js](https://nodejs.org/) 18+ and npm/pnpm/yarn
 - [ffmpeg](https://ffmpeg.org/)
-- [OpenSSL CLI](https://www.openssl.org/) (needed when Threads > 1)
 
 ### Detailed Installation Guides
 
