@@ -3,7 +3,8 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::time::{sleep, Duration};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, State, Window};
+use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager, State, Window};
+use tauri::path::BaseDirectory;
 
 use crate::{
     api, download, scrape,
@@ -192,7 +193,8 @@ pub async fn start_download(
     req: DownloadRequest,
 ) -> Result<(), String> {
     // Check requirements before starting download
-    let requirements_check = check_requirements().await?;
+    let app_handle = window.app_handle();
+    let requirements_check = check_requirements_internal(&app_handle)?;
     if !requirements_check.all_available {
         let missing: Vec<String> = requirements_check
             .requirements
@@ -206,7 +208,7 @@ pub async fn start_download(
         ));
     }
 
-    if let Ok(path) = resolve_ffmpeg_path(&window.app_handle()) {
+    if let Ok(path) = resolve_ffmpeg_path(&app_handle) {
         download::set_ffmpeg_path(path);
     }
 
@@ -424,6 +426,10 @@ pub async fn start_download(
 
 #[tauri::command]
 pub async fn check_requirements(app_handle: AppHandle) -> Result<RequirementsCheckResponse, String> {
+    check_requirements_internal(&app_handle)
+}
+
+fn check_requirements_internal(app_handle: &AppHandle) -> Result<RequirementsCheckResponse, String> {
     let mut requirements = Vec::new();
     let mut all_available = true;
 
@@ -470,7 +476,8 @@ fn bundled_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
     };
 
     app_handle
-        .path_resolver()
-        .resolve_resource(relative)
+        .path()
+        .resolve(relative, BaseDirectory::Resource)
+        .ok()
         .filter(|path| path.exists())
 }
