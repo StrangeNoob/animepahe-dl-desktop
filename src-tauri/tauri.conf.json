@@ -39,7 +39,9 @@
     "shortDescription": "Anime downloader desktop application",
     "longDescription": "A modern desktop application for downloading anime from Animepahe with a sleek UI built with Tauri, React, and Rust.",
     "externalBin": [],
-    "resources": [],
+    "resources": [
+      "resources/ffmpeg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

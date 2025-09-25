@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use tokio::time::{sleep, Duration};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::JoinHandle, Emitter, State, Window};
+use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, State, Window};
 
 use crate::{
     api, download, scrape,
@@ -204,6 +204,10 @@ pub async fn start_download(
             "Missing required dependencies: {}. Please install them before downloading.",
             missing.join(", ")
         ));
+    }
+
+    if let Ok(path) = resolve_ffmpeg_path(&window.app_handle()) {
+        download::set_ffmpeg_path(path);
     }
 
     let cookie = state.cookie();
@@ -419,12 +423,11 @@ pub async fn start_download(
 }
 
 #[tauri::command]
-pub async fn check_requirements() -> Result<RequirementsCheckResponse, String> {
+pub async fn check_requirements(app_handle: AppHandle) -> Result<RequirementsCheckResponse, String> {
     let mut requirements = Vec::new();
     let mut all_available = true;
 
-    // Check ffmpeg
-    match which::which("ffmpeg") {
+    match resolve_ffmpeg_path(&app_handle) {
         Ok(path) => {
             requirements.push(RequirementStatus {
                 name: "ffmpeg".to_string(),
@@ -448,4 +451,26 @@ pub async fn check_requirements() -> Result<RequirementsCheckResponse, String> {
         all_available,
         requirements,
     })
+}
+
+fn resolve_ffmpeg_path(app_handle: &AppHandle) -> Result<PathBuf, which::Error> {
+    if let Some(path) = bundled_ffmpeg_path(app_handle) {
+        return Ok(path);
+    }
+    which::which("ffmpeg")
+}
+
+fn bundled_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
+    let relative = if cfg!(target_os = "windows") {
+        "ffmpeg/windows/ffmpeg.exe"
+    } else if cfg!(target_os = "macos") {
+        "ffmpeg/macos/ffmpeg"
+    } else {
+        "ffmpeg/linux/ffmpeg"
+    };
+
+    app_handle
+        .path_resolver()
+        .resolve_resource(relative)
+        .filter(|path| path.exists())
 }

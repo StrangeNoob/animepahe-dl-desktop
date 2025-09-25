@@ -14,7 +14,7 @@ Features
 Requirements
 - Node.js (18+) – required only for the React/Vite build tooling; the downloader no longer executes Node at runtime.
 - Rust toolchain – builds the Tauri backend.
-- ffmpeg – required for both streaming and concatenation.
+- ffmpeg – required for both streaming and concatenation. Place platform binaries under `src-tauri/resources/ffmpeg/<platform>/` before packaging to ship them with the app; otherwise the runtime falls back to the system `PATH`.
 - macOS note: the project depends on `winit` ≥ 0.30.12 with `objc2`’s `relax-sign-encoding` feature to avoid Sonoma monitor enumeration crashes.
 
 Build
@@ -29,7 +29,7 @@ Notes
 - The Rust backend now evaluates the obfuscated player script in an embedded JS engine, so no external Node runtime is needed during downloads.
 
 Troubleshooting
-- Ensure `ffmpeg` and `node` binaries are discoverable on PATH.
+- Ensure `ffmpeg` is either bundled (see `src-tauri/resources/ffmpeg/`) or available on PATH, and that Node.js is installed for the development build tooling.
 - If downloads appear stalled, watch the console: decrypt and concat phases now log progress so you can confirm the job is still running.
 
 Distribution

@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs as tokiofs;
 use tokio::time::{timeout, Duration};
@@ -20,6 +20,12 @@ fn timestamp() -> String {
     let secs = now.as_secs();
     let millis = now.subsec_millis();
     format!("[{}.{:03}]", secs, millis)
+}
+
+static FFMPEG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_ffmpeg_path(path: PathBuf) {
+    let _ = FFMPEG_PATH.set(path);
 }
 
 pub async fn download_episode(
@@ -162,7 +168,7 @@ async fn ffmpeg_hls(
     progress: Option<(Arc<AtomicUsize>, Arc<AtomicUsize>)>,
 ) -> Result<()> {
     eprintln!("{} ffmpeg_hls called with m3u8: {}", timestamp(), m3u8);
-    let ffmpeg = which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))?;
+    let ffmpeg = resolve_ffmpeg()?;
     let mut cmd = Command::new(ffmpeg);
     cmd.arg("-headers")
         .arg(format!("Referer: {}\r\nCookie: {}", host, cookie))
@@ -301,7 +307,7 @@ fn parse_time_to_millis(input: &str) -> Option<u64> {
 }
 
 fn ffmpeg_concat(list_path: &Path, out_file: &Path) -> Result<()> {
-    let ffmpeg = which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))?;
+    let ffmpeg = resolve_ffmpeg()?;
     let status = Command::new(ffmpeg)
         .arg("-f")
         .arg("concat")
@@ -336,6 +342,13 @@ fn log_output_file(out_file: &Path) {
             err
         ),
     }
+}
+
+fn resolve_ffmpeg() -> Result<PathBuf> {
+    if let Some(path) = FFMPEG_PATH.get() {
+        return Ok(path.clone());
+    }
+    which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))
 }
 
 async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> Result<()> {

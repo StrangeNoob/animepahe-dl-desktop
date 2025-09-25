@@ -40,6 +40,16 @@ For detailed, OS-specific installation instructions for each requirement:
 
 At runtime the desktop app only depends on `ffmpeg`; Node.js is needed solely for local development/build steps.
 
+### Bundled ffmpeg binaries
+
+The Tauri bundle looks for a platform-specific `ffmpeg` executable under `src-tauri/resources/ffmpeg/<platform>/` (copied into the app bundle at build time):
+
+- macOS: `src-tauri/resources/ffmpeg/macos/ffmpeg`
+- Windows: `src-tauri/resources/ffmpeg/windows/ffmpeg.exe`
+- Linux: `src-tauri/resources/ffmpeg/linux/ffmpeg`
+
+If you place the appropriate binary in these folders before running `npm run tauri build`, the packaged app will prefer the bundled copy. When the folder is empty the app automatically falls back to the system `ffmpeg` on `PATH`.
+
 ## Quick Start
 
 ```bash

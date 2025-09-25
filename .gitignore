@@ -21,3 +21,6 @@ vendor/*
 *.sh
 *.app
 .claude/
+
+src-tauri/resources/ffmpeg/*
+!src-tauri/resources/ffmpeg/**/.gitkeep
