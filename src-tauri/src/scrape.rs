@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use quick_js::{Context as JsContext, ExecutionError, JsValue};
+use quick_js::Context as JsContext;
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
-use std::{sync::{Arc, Mutex}, time::Duration};
+use serde_json;
+use std::time::Duration;
 use tokio::time::timeout;
 
 #[derive(Debug, Clone, Serialize)]
@@ -130,55 +130,46 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
 
     eprintln!("Executing JavaScript to extract m3u8...");
 
-    let js_source = js.clone();
+    let js_literal = serde_json::to_string(&js).context("escape script for JS evaluation")?;
+    let wrapper = format!(
+        r#"(function() {{
+  let output = "";
+  const console = {{
+    log: (...args) => {{
+      output += args.map(value => String(value)).join(" ") + "\n";
+    }}
+  }};
+  globalThis.console = console;
+  globalThis.process = {{}};
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+  globalThis.atob = function(input) {{
+    const str = String(input).replace(/=+$/, "");
+    if (str.length % 4 === 1) {{
+      throw new Error("Invalid base64");
+    }}
+    let bc = 0, bs = 0, buffer, idx = 0, result = "";
+    for (; (buffer = str.charAt(idx++)); ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer, bc++ % 4) ? result += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {{
+      buffer = chars.indexOf(buffer);
+    }}
+    return result;
+  }};
+  try {{
+    eval({js_literal});
+  }} catch (err) {{
+    output += String(err) + "\n";
+  }}
+  return output;
+}})()"#
+    );
 
     let printed = timeout(Duration::from_secs(10), async move {
         tokio::task::spawn_blocking(move || -> Result<String> {
             let ctx = JsContext::new()
                 .map_err(|err| anyhow!("Failed to create JavaScript context: {err}"))?;
-            let output = Arc::new(Mutex::new(String::new()));
-
-            {
-                let out = Arc::clone(&output);
-                ctx.add_callback("capture_log", move |message: String| -> Result<bool, ExecutionError> {
-                    let mut buffer = out.lock().expect("console log mutex");
-                    buffer.push_str(&message);
-                    buffer.push('\n');
-                    Ok(true)
-                })?;
-                ctx.eval(
-                    "const __fmt = (value) => {
-                        if (value === null) return 'null';
-                        if (value === undefined) return 'undefined';
-                        if (typeof value === 'string') return value;
-                        try { return JSON.stringify(value); } catch (err) { return String(value); }
-                    };
-                    globalThis.console = {
-                        log: (...args) => capture_log(args.map(__fmt).join(' '))
-                    };
-                ",
-                )?;
-            }
-
-            ctx.add_callback("capture_exit", || -> Result<bool, ExecutionError> { Ok(true) })?;
-            ctx.eval("globalThis.exit = capture_exit;")?;
-            ctx.eval("globalThis.process = {};")?;
-
-            ctx.add_callback("capture_atob", |input: String| -> Result<String, ExecutionError> {
-                let bytes = BASE64_STANDARD
-                    .decode(input.as_bytes())
-                    .map_err(|err| ExecutionError::Exception(JsValue::String(err.to_string())))?;
-                let decoded = String::from_utf8(bytes)
-                    .map_err(|err| ExecutionError::Exception(JsValue::String(err.to_string())))?;
-                Ok(decoded)
-            })?;
-            ctx.eval("globalThis.atob = capture_atob;")?;
-
-            ctx.eval(js_source.as_str())
+            let output: String = ctx
+                .eval_as(wrapper.as_str())
                 .map_err(|err| anyhow!("JavaScript evaluation failed: {err}"))?;
-
-            let result = output.lock().expect("console log mutex").clone();
-            Ok(result)
+            Ok(output)
         })
         .await
         .map_err(|err| anyhow!("JavaScript execution task failed: {err}"))?
