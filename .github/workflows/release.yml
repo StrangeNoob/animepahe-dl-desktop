@@ -50,14 +50,6 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
-      - name: Configure clang for QuickJS
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          echo "CC=C:\Program Files\LLVM\bin\clang-cl.exe" >> $Env:GITHUB_ENV
-          echo "CXX=C:\Program Files\LLVM\bin\clang-cl.exe" >> $Env:GITHUB_ENV
-          echo "AR=C:\Program Files\LLVM\bin\llvm-ar.exe" >> $Env:GITHUB_ENV
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

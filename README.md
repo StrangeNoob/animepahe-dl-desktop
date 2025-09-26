@@ -19,6 +19,7 @@ Animepahe DL Desktop is now a Tauri + React application with a Rust backend. It 
 - Tailwind CSS and shadcn/ui (Radix primitives) for styling and components
 - Neon-glassmorphism desktop UI with gradient accents and vector icons
 - Rust 2021 backend with `tokio`, `reqwest`, `scraper`, and `regex`
+- Embedded JavaScript evaluation via pure-Rust `boa_engine` for playlist deobfuscation across macOS/Windows/Linux
 - macOS crash fix via `winit` ≥ 0.30.12 and `objc2` + `objc2-foundation` built with the `relax-sign-encoding` feature
 - External binaries: `ffmpeg`, `node` (detected at runtime)
 
@@ -91,7 +92,7 @@ Theme, base URL, and output directory are editable on the toolbar and persist be
 ## Packaging & Releases
 
 - `npm run tauri build` bundles the front end and emits cross-platform artifacts.
-- The GitHub workflow in `.github/workflows/release.yml` builds Linux `.tar.gz`, macOS `.zip`, and Windows `.zip` artifacts when triggered via `v*` tags or the “Run workflow” button.
+- The GitHub workflow in `.github/workflows/release.yml` runs on pushes to the `release` branch, builds installers for macOS (Intel + Apple Silicon), Windows, and Linux, and drafts the corresponding GitHub Release.
 
 ## Development Checklist
 

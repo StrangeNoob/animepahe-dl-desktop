@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use quick_js::Context as JsContext;
+use boa_engine::{context::Context as JsContext, Source};
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
@@ -164,12 +164,18 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
 
     let printed = timeout(Duration::from_secs(10), async move {
         tokio::task::spawn_blocking(move || -> Result<String> {
-            let ctx = JsContext::new()
-                .map_err(|err| anyhow!("Failed to create JavaScript context: {err}"))?;
-            let output: String = ctx
-                .eval_as(wrapper.as_str())
+            let mut ctx = JsContext::default();
+            let source = Source::from_bytes(wrapper.as_bytes());
+            let value = ctx
+                .eval(source)
                 .map_err(|err| anyhow!("JavaScript evaluation failed: {err}"))?;
-            Ok(output)
+            let js_string = value
+                .to_string(&mut ctx)
+                .map_err(|err| anyhow!("JavaScript value conversion failed: {err}"))?;
+            let output_value = js_string
+                .to_std_string()
+                .map_err(|err| anyhow!("JavaScript output conversion failed: {err}"))?;
+            Ok(output_value.to_string())
         })
         .await
         .map_err(|err| anyhow!("JavaScript execution task failed: {err}"))?

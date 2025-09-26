@@ -26,7 +26,7 @@ Notes
 - Cookie: the backend generates a random `__ddg2_` cookie for each session.
 - Host URL: configurable in the toolbar; persisted to the OS config dir.
 - Parallel decrypt assumes IV=0 (matching the shell script behaviour).
-- The Rust backend now evaluates the obfuscated player script in an embedded JS engine, so no external Node runtime is needed during downloads.
+- The Rust backend now evaluates the obfuscated player script with the pure-Rust `boa_engine`, so no external Node runtime is needed during downloads.
 
 Troubleshooting
 - Ensure `ffmpeg` is either bundled (see `src-tauri/resources/ffmpeg/`) or available on PATH, and that Node.js is installed for the development build tooling.
@@ -34,4 +34,4 @@ Troubleshooting
 
 Distribution
 - Run `npm run tauri build` on each target OS. Artifacts are emitted under `src-tauri/target/release/bundle/`.
-- The GitHub workflow `.github/workflows/release.yml` builds the same bundles for Linux/macOS/Windows on tag pushes or manual dispatch.
+- The GitHub workflow `.github/workflows/release.yml` rebuilds the same bundles for Linux/macOS/Windows whenever you push to the `release` branch.
