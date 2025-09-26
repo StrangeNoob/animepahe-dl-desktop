@@ -6,6 +6,11 @@ on:
       - release
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   test-build:
     name: Test Build - ${{ matrix.platform }} ${{ matrix.args }}
