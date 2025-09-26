@@ -66,6 +66,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Fix Rollup optional dependencies
+        run: |
+          # Workaround for npm optional dependencies bug with Rollup
+          npm install @rollup/rollup-linux-x64-gnu @rollup/rollup-win32-x64-msvc @rollup/rollup-darwin-x64 @rollup/rollup-darwin-arm64 --no-save || true
+        shell: bash
+
       - name: Build frontend
         run: npm run build
 
@@ -91,13 +97,29 @@ jobs:
         run: |
           echo "Checking macOS build artifacts..."
           TARGET_TRIPLE="${{ contains(matrix.args, 'aarch64') && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}"
+
+          echo "Looking for executable in target directories..."
+          find src-tauri/target -name "animepahe-tauri" -type f | head -5
+
+          # Check both target-specific and universal paths
+          EXECUTABLE_FOUND=false
           if [ -f "src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri" ]; then
-            echo "✅ macOS executable found for $TARGET_TRIPLE"
-            find src-tauri/target/$TARGET_TRIPLE/release/bundle -name "*.app" -o -name "*.dmg" | while read -r file; do
+            echo "✅ macOS executable found at src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
+          elif [ -f "src-tauri/target/release/animepahe-tauri" ]; then
+            echo "✅ macOS executable found at src-tauri/target/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
+          fi
+
+          if [ "$EXECUTABLE_FOUND" = true ]; then
+            echo "Looking for app bundles..."
+            find src-tauri/target -name "*.app" -o -name "*.dmg" | head -10 | while read -r file; do
               echo "Found bundle: $file"
             done
           else
-            echo "❌ macOS executable not found"
+            echo "❌ macOS executable not found in expected locations"
+            echo "Contents of src-tauri/target:"
+            find src-tauri/target -type f -name "*animepahe*" | head -10
             exit 1
           fi
 
