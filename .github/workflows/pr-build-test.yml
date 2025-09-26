@@ -65,6 +65,8 @@ jobs:
 
       - name: Install frontend dependencies with Rollup fix
         run: |
+          # Clear node_modules and package-lock first as suggested by Rollup error message
+          rm -rf node_modules package-lock.json
           # Use npm install instead of npm ci to handle optional dependencies properly
           # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
           npm install
@@ -80,9 +82,18 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: |
           echo "Checking Windows build artifacts..."
-          if (Test-Path "src-tauri/target/release/animepahe-tauri.exe") {
-            echo "✅ Windows executable found"
-            Get-ChildItem "src-tauri/target/release/bundle" -Recurse -Include "*.exe", "*.msi" | ForEach-Object {
+          $EXECUTABLE_FOUND = $false
+          if (Test-Path "target/release/animepahe-tauri.exe") {
+            echo "✅ Windows executable found at target/release/animepahe-tauri.exe"
+            $EXECUTABLE_FOUND = $true
+          } elseif (Test-Path "src-tauri/target/release/animepahe-tauri.exe") {
+            echo "✅ Windows executable found at src-tauri/target/release/animepahe-tauri.exe"
+            $EXECUTABLE_FOUND = $true
+          }
+
+          if ($EXECUTABLE_FOUND) {
+            echo "Looking for Windows installers..."
+            Get-ChildItem -Path "." -Recurse -Include "*.exe", "*.msi" | Where-Object { $_.Name -like "*nimepahe*" } | ForEach-Object {
               echo "Found installer: $($_.FullName)"
             }
           } else {
@@ -96,36 +107,37 @@ jobs:
           echo "Checking macOS build artifacts..."
           TARGET_TRIPLE="${{ contains(matrix.args, 'aarch64') && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}"
 
-          # Check if target directory exists first
-          if [ ! -d "src-tauri/target" ]; then
-            echo "❌ Build target directory not found - build may have failed earlier"
-            echo "Checking for any build artifacts in the workspace..."
-            find . -name "*animepahe*" -type f 2>/dev/null | head -10 || echo "No build artifacts found"
-            exit 1
-          fi
-
           echo "Looking for executable in target directories..."
-          find src-tauri/target -name "animepahe-tauri" -type f 2>/dev/null | head -5
+          find . -name "animepahe-tauri" -type f 2>/dev/null | head -5
 
-          # Check both target-specific and universal paths
+          # Check multiple possible locations for the executable
           EXECUTABLE_FOUND=false
-          if [ -f "src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri" ]; then
+
+          # Check new target structure (./target)
+          if [ -f "target/$TARGET_TRIPLE/release/animepahe-tauri" ]; then
+            echo "✅ macOS executable found at target/$TARGET_TRIPLE/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
+          # Check legacy location (src-tauri/target)
+          elif [ -f "src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri" ]; then
             echo "✅ macOS executable found at src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri"
             EXECUTABLE_FOUND=true
           elif [ -f "src-tauri/target/release/animepahe-tauri" ]; then
             echo "✅ macOS executable found at src-tauri/target/release/animepahe-tauri"
             EXECUTABLE_FOUND=true
+          elif [ -f "target/release/animepahe-tauri" ]; then
+            echo "✅ macOS executable found at target/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
           fi
 
           if [ "$EXECUTABLE_FOUND" = true ]; then
             echo "Looking for app bundles..."
-            find src-tauri/target -name "*.app" -o -name "*.dmg" 2>/dev/null | head -10 | while read -r file; do
+            find . -name "*.app" -o -name "*.dmg" 2>/dev/null | head -10 | while read -r file; do
               echo "Found bundle: $file"
             done
           else
             echo "❌ macOS executable not found in expected locations"
-            echo "Contents of src-tauri/target:"
-            find src-tauri/target -type f -name "*animepahe*" 2>/dev/null | head -10 || echo "No animepahe artifacts found"
+            echo "Searching for build artifacts in workspace..."
+            find . -name "*animepahe*" -type f 2>/dev/null | head -10 || echo "No animepahe artifacts found"
             exit 1
           fi
 
@@ -133,9 +145,19 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           echo "Checking Linux build artifacts..."
-          if [ -f "src-tauri/target/release/animepahe-tauri" ]; then
-            echo "✅ Linux executable found"
-            find src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" | while read -r file; do
+          # Check multiple possible locations for the executable
+          EXECUTABLE_FOUND=false
+          if [ -f "target/release/animepahe-tauri" ]; then
+            echo "✅ Linux executable found at target/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
+          elif [ -f "src-tauri/target/release/animepahe-tauri" ]; then
+            echo "✅ Linux executable found at src-tauri/target/release/animepahe-tauri"
+            EXECUTABLE_FOUND=true
+          fi
+
+          if [ "$EXECUTABLE_FOUND" = true ]; then
+            echo "Looking for Linux packages..."
+            find . -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" 2>/dev/null | while read -r file; do
               echo "Found package: $file"
             done
           else
