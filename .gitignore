@@ -3,7 +3,6 @@ anime.list
 */.source.json
 */*.mp4
 node_modules
-package-lock.json
 .editorconfig
 .git
 cookie.json
