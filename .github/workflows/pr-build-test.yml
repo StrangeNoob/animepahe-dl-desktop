@@ -1,0 +1,199 @@
+name: "PR Build Test"
+
+on:
+  pull_request:
+    branches:
+      - release
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test-build:
+    name: Test Build - ${{ matrix.platform }} ${{ matrix.args }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS builds
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+            name: "macOS (Apple Silicon)"
+          - platform: "macos-latest"
+            args: "--target x86_64-apple-darwin"
+            name: "macOS (Intel)"
+
+          # Linux build
+          - platform: "ubuntu-22.04"
+            args: ""
+            name: "Linux"
+
+          # Windows build
+          - platform: "windows-latest"
+            args: ""
+            name: "Windows"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri application
+        run: npm run tauri build -- ${{ matrix.args }}
+
+      - name: Verify build artifacts (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          echo "Checking Windows build artifacts..."
+          if (Test-Path "src-tauri/target/release/animepahe-tauri.exe") {
+            echo "✅ Windows executable found"
+            Get-ChildItem "src-tauri/target/release/bundle" -Recurse -Include "*.exe", "*.msi" | ForEach-Object {
+              echo "Found installer: $($_.FullName)"
+            }
+          } else {
+            echo "❌ Windows executable not found"
+            exit 1
+          }
+
+      - name: Verify build artifacts (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "Checking macOS build artifacts..."
+          TARGET_TRIPLE="${{ contains(matrix.args, 'aarch64') && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}"
+          if [ -f "src-tauri/target/$TARGET_TRIPLE/release/animepahe-tauri" ]; then
+            echo "✅ macOS executable found for $TARGET_TRIPLE"
+            find src-tauri/target/$TARGET_TRIPLE/release/bundle -name "*.app" -o -name "*.dmg" | while read -r file; do
+              echo "Found bundle: $file"
+            done
+          else
+            echo "❌ macOS executable not found"
+            exit 1
+          fi
+
+      - name: Verify build artifacts (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          echo "Checking Linux build artifacts..."
+          if [ -f "src-tauri/target/release/animepahe-tauri" ]; then
+            echo "✅ Linux executable found"
+            find src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" | while read -r file; do
+              echo "Found package: $file"
+            done
+          else
+            echo "❌ Linux executable not found"
+            exit 1
+          fi
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "### Build Test Summary for ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ **Build successful**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build failed**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Platform: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Architecture: ${{ matrix.args || 'default' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Node version: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust version: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+        shell: bash
+
+  # Summary job that runs after all builds
+  build-status:
+    name: Build Status Check
+    runs-on: ubuntu-latest
+    needs: test-build
+    if: always()
+    steps:
+      - name: Check build results
+        run: |
+          echo "### 🎯 Overall Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-build.result }}" == "success" ]; then
+            echo "✅ **All platform builds successful!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The PR is ready to merge from a build perspective." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **One or more platform builds failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the individual build logs above for details." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const result = '${{ needs.test-build.result }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const body = result === 'success'
+              ? `### ✅ Build Test Passed\n\nAll platform builds completed successfully!\n\n[View build logs](${runUrl})`
+              : `### ❌ Build Test Failed\n\nOne or more platform builds failed. Please check the logs for details.\n\n[View build logs](${runUrl})`;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Build Test')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
