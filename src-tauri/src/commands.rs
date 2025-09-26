@@ -467,17 +467,19 @@ fn resolve_ffmpeg_path(app_handle: &AppHandle) -> Result<PathBuf, which::Error> 
 }
 
 fn bundled_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
-    let relative = if cfg!(target_os = "windows") {
-        "ffmpeg/windows/ffmpeg.exe"
+    let candidates: &[&str] = if cfg!(target_os = "windows") {
+        &["ffmpeg/windows/ffmpeg.exe", "resources/ffmpeg/windows/ffmpeg.exe"]
     } else if cfg!(target_os = "macos") {
-        "ffmpeg/macos/ffmpeg"
+        &["ffmpeg/macos/ffmpeg", "resources/ffmpeg/macos/ffmpeg"]
     } else {
-        "ffmpeg/linux/ffmpeg"
+        &["ffmpeg/linux/ffmpeg", "resources/ffmpeg/linux/ffmpeg"]
     };
 
-    app_handle
-        .path()
-        .resolve(relative, BaseDirectory::Resource)
-        .ok()
-        .filter(|path| path.exists())
+    candidates.iter().find_map(|relative| {
+        app_handle
+            .path()
+            .resolve(relative, BaseDirectory::Resource)
+            .ok()
+            .filter(|path| path.exists())
+    })
 }
