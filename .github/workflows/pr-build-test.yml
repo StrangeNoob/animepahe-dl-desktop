@@ -63,13 +63,11 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Fix Rollup optional dependencies
+      - name: Install frontend dependencies with Rollup fix
         run: |
-          # Workaround for npm optional dependencies bug with Rollup
-          npm install @rollup/rollup-linux-x64-gnu @rollup/rollup-win32-x64-msvc @rollup/rollup-darwin-x64 @rollup/rollup-darwin-arm64 --no-save || true
+          # Use npm install instead of npm ci to handle optional dependencies properly
+          # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
+          npm install
         shell: bash
 
       - name: Build frontend
@@ -98,8 +96,16 @@ jobs:
           echo "Checking macOS build artifacts..."
           TARGET_TRIPLE="${{ contains(matrix.args, 'aarch64') && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}"
 
+          # Check if target directory exists first
+          if [ ! -d "src-tauri/target" ]; then
+            echo "❌ Build target directory not found - build may have failed earlier"
+            echo "Checking for any build artifacts in the workspace..."
+            find . -name "*animepahe*" -type f 2>/dev/null | head -10 || echo "No build artifacts found"
+            exit 1
+          fi
+
           echo "Looking for executable in target directories..."
-          find src-tauri/target -name "animepahe-tauri" -type f | head -5
+          find src-tauri/target -name "animepahe-tauri" -type f 2>/dev/null | head -5
 
           # Check both target-specific and universal paths
           EXECUTABLE_FOUND=false
@@ -113,13 +119,13 @@ jobs:
 
           if [ "$EXECUTABLE_FOUND" = true ]; then
             echo "Looking for app bundles..."
-            find src-tauri/target -name "*.app" -o -name "*.dmg" | head -10 | while read -r file; do
+            find src-tauri/target -name "*.app" -o -name "*.dmg" 2>/dev/null | head -10 | while read -r file; do
               echo "Found bundle: $file"
             done
           else
             echo "❌ macOS executable not found in expected locations"
             echo "Contents of src-tauri/target:"
-            find src-tauri/target -type f -name "*animepahe*" | head -10
+            find src-tauri/target -type f -name "*animepahe*" 2>/dev/null | head -10 || echo "No animepahe artifacts found"
             exit 1
           fi
 
