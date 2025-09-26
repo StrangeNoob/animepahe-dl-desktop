@@ -32,12 +32,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: 'npm'
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
@@ -47,8 +53,17 @@ jobs:
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
 
-      - name: install frontend dependencies
-        run: npm install
+      - name: install frontend dependencies with Rollup fix
+        run: |
+          # Clear node_modules and package-lock first as suggested by Rollup error message
+          rm -rf node_modules package-lock.json
+          # Use npm install instead of npm ci to handle optional dependencies properly
+          # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
+          npm install
+        shell: bash
+
+      - name: Build frontend
+        run: npm run build
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -59,5 +74,4 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          npmScript: tauri:build
           args: ${{ matrix.args }}
