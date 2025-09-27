@@ -26,18 +26,10 @@ export const tourSteps: TourStep[] = [
     placement: "right",
   },
   {
-    id: "episodes-fetch",
-    title: "Fetch Episode List",
-    content:
-      "Once you've selected an anime, click 'Fetch episodes' to load all available episodes. This will populate the episode grid on the right.",
-    target: "[data-tour='fetch-button']",
-    placement: "top",
-  },
-  {
     id: "episodes-grid",
     title: "Select Episodes",
     content:
-      "Here you can see all available episodes. Check the boxes to select specific episodes, or use 'Select all' for the entire series. You can also use the 'Use as spec' button to convert your selection into an episode specification.",
+      "Episodes load automatically once you choose an anime. Check the boxes to select specific episodes, or use 'Select all' for the entire series. You can also use the 'Use as spec' button to convert your selection into an episode specification.",
     target: "[data-tour='episodes-section']",
     placement: "left",
   },

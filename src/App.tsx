@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -39,6 +39,7 @@ import {
   DownloadCloud,
   FolderSearch,
   ListChecks,
+  Loader2,
   MonitorPlay,
   Search as SearchIcon,
   Sparkles,
@@ -90,6 +91,7 @@ function AppContent() {
   const [listOnly, setListOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
   const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
   const [previewData, setPreviewData] = useState<PreviewItem[] | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -99,6 +101,7 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementsCheckResponse | null>(null);
   const [requirementsDialogOpen, setRequirementsDialogOpen] = useState(false);
+  const episodesRequestId = useRef(0);
 
   const slugMissing = slug.trim().length === 0;
 
@@ -241,25 +244,51 @@ function AppContent() {
       })),
     [searchResults],
   );
-
-  const handleFetchEpisodes = async () => {
-    if (slugMissing) {
-      setError("Select an anime before fetching episodes.");
+  useEffect(() => {
+    if (!selectedAnime) {
+      setEpisodesLoading(false);
       return;
     }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const data = await fetchEpisodes(slug.trim(), settings.hostUrl, selectedAnime?.title ?? searchQuery);
-      setEpisodes(data);
-      setSelectedEpisodes([]);
-    } catch (err) {
-      console.error(err);
-      setError(String(err));
-    } finally {
-      setIsBusy(false);
+
+    const trimmedSlug = selectedAnime.session.trim();
+    if (!trimmedSlug) {
+      setEpisodesLoading(false);
+      return;
     }
-  };
+
+    const requestId = ++episodesRequestId.current;
+    let active = true;
+
+    setEpisodesLoading(true);
+    setError(null);
+
+    fetchEpisodes(trimmedSlug, settings.hostUrl, selectedAnime.title)
+      .then((data) => {
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodes(data);
+        setSelectedEpisodes([]);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setError(String(err));
+        setEpisodes(null);
+      })
+      .finally(() => {
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedAnime, settings.hostUrl]);
 
   const handleToggleEpisode = (episode: number) => {
     setSelectedEpisodes((prev) =>
@@ -316,8 +345,16 @@ function AppContent() {
   };
 
   const handlePreview = async () => {
-    if (!episodes || slugMissing) {
-      setError("Fetch episodes before previewing sources.");
+    if (slugMissing) {
+      setError("Select an anime before previewing sources.");
+      return;
+    }
+    if (episodesLoading) {
+      setError("Episodes are still loading. Try again in a moment.");
+      return;
+    }
+    if (!episodes) {
+      setError("Episodes are not available yet.");
       return;
     }
     const previewEpisodes = selectedEpisodes.length
@@ -576,13 +613,21 @@ function AppContent() {
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <Button onClick={handleFetchEpisodes} disabled={isBusy || slugMissing} data-tour="fetch-button">
-                  Fetch episodes
-                </Button>
-                <Button variant="outline" onClick={handlePreview} disabled={isBusy || slugMissing} data-tour="preview-button">
+                <Button
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={isBusy || episodesLoading || slugMissing || !episodes}
+                  data-tour="preview-button"
+                >
                   Preview sources
                 </Button>
-                <Button variant="default" onClick={handleDownload} disabled={slugMissing} className="sm:col-span-2" data-tour="download-button">
+                <Button
+                  variant="default"
+                  onClick={handleDownload}
+                  disabled={slugMissing || isBusy}
+                  className="sm:col-span-2"
+                  data-tour="download-button"
+                >
                   Download
                 </Button>
               </div>
@@ -602,6 +647,11 @@ function AppContent() {
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                     <span>Fetched: {episodes.episodes.length}</span>
+                    {episodesLoading && (
+                      <span className="flex items-center gap-1 text-xs">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Refreshing…
+                      </span>
+                    )}
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={handleSelectAll}>
                         Select all
@@ -639,11 +689,17 @@ function AppContent() {
                     </div>
                   </div>
                 </>
+              ) : episodesLoading ? (
+                <EmptyState
+                  icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
+                  title="Loading episodes"
+                  message="Hang tight while we grab the latest list."
+                />
               ) : (
                 <EmptyState
                   icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
                   title="No episodes yet"
-                  message="Fetch episodes to pick your favorites."
+                  message="Select an anime to load episodes."
                 />
               )}
             </CardContent>
