@@ -19,7 +19,8 @@ fn main() {
             commands::fetch_episodes,
             commands::preview_sources,
             commands::start_download,
-            commands::check_requirements
+            commands::check_requirements,
+            commands::open_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::time::{sleep, Duration};
 
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager, State, Window};
 use tauri::path::BaseDirectory;
+use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager, State, Window};
 
 use crate::{
     api, download, scrape,
@@ -177,6 +177,7 @@ pub struct RequirementsCheckResponse {
 struct StatusPayload {
     episode: u32,
     status: String,
+    path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -243,6 +244,7 @@ pub async fn start_download(
                     StatusPayload {
                         episode: 0,
                         status: "No episodes selected".into(),
+                        path: None,
                     },
                 );
                 return;
@@ -253,6 +255,7 @@ pub async fn start_download(
                     StatusPayload {
                         episode: 0,
                         status: format!("Failed: {err}"),
+                        path: None,
                     },
                 );
                 return;
@@ -265,6 +268,7 @@ pub async fn start_download(
                 StatusPayload {
                     episode,
                     status: "Fetching link".into(),
+                    path: None,
                 },
             );
 
@@ -277,6 +281,7 @@ pub async fn start_download(
                         StatusPayload {
                             episode,
                             status: format!("Failed: {err}"),
+                            path: None,
                         },
                     );
                     continue;
@@ -291,6 +296,7 @@ pub async fn start_download(
                         StatusPayload {
                             episode,
                             status: format!("Failed: {err}"),
+                            path: None,
                         },
                     );
                     continue;
@@ -307,6 +313,7 @@ pub async fn start_download(
                     StatusPayload {
                         episode,
                         status: "No matching source".into(),
+                        path: None,
                     },
                 );
                 continue;
@@ -316,6 +323,7 @@ pub async fn start_download(
                 StatusPayload {
                     episode,
                     status: "Extracting playlist".into(),
+                    path: None,
                 },
             );
             let playlist =
@@ -327,19 +335,24 @@ pub async fn start_download(
                             StatusPayload {
                                 episode,
                                 status: format!("Failed: {err}"),
+                                path: None,
                             },
                         );
                         continue;
                     }
                 };
 
-            eprintln!("Playlist extraction completed for episode {}, starting download process", episode);
+            eprintln!(
+                "Playlist extraction completed for episode {}, starting download process",
+                episode
+            );
 
             let _ = window.emit(
                 "download-status",
                 StatusPayload {
                     episode,
                     status: "Downloading".into(),
+                    path: None,
                 },
             );
 
@@ -349,6 +362,7 @@ pub async fn start_download(
                     StatusPayload {
                         episode,
                         status: format!("m3u8: {playlist}"),
+                        path: Some(playlist.clone()),
                     },
                 );
                 continue;
@@ -388,7 +402,7 @@ pub async fn start_download(
                 &anime_name,
                 episode,
                 &playlist,
-        threads,
+                threads,
                 &cookie,
                 download_dir.as_deref(),
                 &host,
@@ -399,12 +413,17 @@ pub async fn start_download(
             progress_handle.await.ok();
 
             match status {
-                Ok(_) => {
+                Ok(path) => {
+                    let folder = path
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or(path.clone());
                     let _ = window.emit(
                         "download-status",
                         StatusPayload {
                             episode,
                             status: "Done".into(),
+                            path: Some(folder.to_string_lossy().to_string()),
                         },
                     );
                 }
@@ -414,6 +433,7 @@ pub async fn start_download(
                         StatusPayload {
                             episode,
                             status: format!("Failed: {err}"),
+                            path: None,
                         },
                     );
                 }
@@ -425,11 +445,23 @@ pub async fn start_download(
 }
 
 #[tauri::command]
-pub async fn check_requirements(app_handle: AppHandle) -> Result<RequirementsCheckResponse, String> {
+pub async fn check_requirements(
+    app_handle: AppHandle,
+) -> Result<RequirementsCheckResponse, String> {
     check_requirements_internal(&app_handle)
 }
 
-fn check_requirements_internal(app_handle: &AppHandle) -> Result<RequirementsCheckResponse, String> {
+#[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("Path is empty".into());
+    }
+    open::that(&path).map_err(|err| err.to_string())
+}
+
+fn check_requirements_internal(
+    app_handle: &AppHandle,
+) -> Result<RequirementsCheckResponse, String> {
     let mut requirements = Vec::new();
     let mut all_available = true;
 
@@ -468,7 +500,10 @@ fn resolve_ffmpeg_path(app_handle: &AppHandle) -> Result<PathBuf, which::Error> 
 
 fn bundled_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
     let candidates: &[&str] = if cfg!(target_os = "windows") {
-        &["ffmpeg/windows/ffmpeg.exe", "resources/ffmpeg/windows/ffmpeg.exe"]
+        &[
+            "ffmpeg/windows/ffmpeg.exe",
+            "resources/ffmpeg/windows/ffmpeg.exe",
+        ]
     } else if cfg!(target_os = "macos") {
         &["ffmpeg/macos/ffmpeg", "resources/ffmpeg/macos/ffmpeg"]
     } else {

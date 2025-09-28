@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { open as selectDirectory } from "@tauri-apps/plugin-dialog";
 
 import {
   loadSettings,
@@ -38,7 +39,9 @@ import {
 import {
   DownloadCloud,
   FolderSearch,
+  FolderOpen,
   ListChecks,
+  Loader2,
   MonitorPlay,
   Search as SearchIcon,
   Sparkles,
@@ -61,6 +64,174 @@ const RESOLUTION_PRESETS = ["1080", "720", "480", "360", "240"] as const;
 const isPresetResolution = (value: string): value is (typeof RESOLUTION_PRESETS)[number] =>
   RESOLUTION_PRESETS.includes(value as (typeof RESOLUTION_PRESETS)[number]);
 
+interface EpisodeSummary {
+  resolutions: string[];
+  audios: string[];
+  message?: string;
+}
+
+const formatEpisodesSpec = (episodes: number[]): string =>
+  episodes
+    .slice()
+    .sort((a, b) => a - b)
+    .join(",");
+
+const parseEpisodeSpec = (value: string, availableEpisodes: number[]): { episodes: number[]; error: string | null } => {
+  const cleaned = value.trim();
+  if (!cleaned) {
+    return { episodes: [], error: null };
+  }
+
+  const parts = cleaned
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return { episodes: [], error: null };
+  }
+
+  const sortedAvailable = [...availableEpisodes].sort((a, b) => a - b);
+  if (!sortedAvailable.length) {
+    return { episodes: [], error: "No episodes available to match." };
+  }
+
+  const availableSet = new Set(sortedAvailable);
+
+  if (parts.some((part) => part.includes("*"))) {
+    return { episodes: sortedAvailable, error: null };
+  }
+
+  const result = new Set<number>();
+
+  for (const part of parts) {
+    const rangeParts = part.split("-").map((n) => n.trim());
+    if (rangeParts.length === 2) {
+      const [startStr, endStr] = rangeParts;
+      if (!startStr || !endStr) {
+        return { episodes: [], error: `Range '${part}' is incomplete.` };
+      }
+      const start = Number(startStr);
+      const end = Number(endStr);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) {
+        return { episodes: [], error: `Range '${part}' must use whole numbers.` };
+      }
+      if (start > end) {
+        return { episodes: [], error: `Range '${part}' is inverted.` };
+      }
+      for (let current = start; current <= end; current += 1) {
+        if (!availableSet.has(current)) {
+          return { episodes: [], error: `Episode ${current} is not available.` };
+        }
+        result.add(current);
+      }
+      continue;
+    }
+
+    const numberValue = Number(part);
+    if (!Number.isInteger(numberValue)) {
+      return { episodes: [], error: `'${part}' is not a valid episode number.` };
+    }
+    if (!availableSet.has(numberValue)) {
+      return { episodes: [], error: `Episode ${numberValue} is not available.` };
+    }
+    result.add(numberValue);
+  }
+
+  return { episodes: [...result].sort((a, b) => a - b), error: null };
+};
+
+const formatResolutionLabel = (value: string) => {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return `${trimmed}p`;
+  }
+  return trimmed;
+};
+
+const formatAudioLabel = (value: string) => {
+  switch (value.trim().toLowerCase()) {
+    case "eng":
+      return "Dub (ENG)";
+    case "jpn":
+      return "Sub (JPN)";
+    case "ja":
+      return "Sub (JA)";
+    default:
+      return value.trim().toUpperCase();
+  }
+};
+
+const sortResolutionValues = (values: Iterable<string>) => {
+  return Array.from(new Set(
+    Array.from(values, (value) => value.trim()).filter((value) => value.length > 0),
+  )).sort((a, b) => {
+    const aNum = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
+    const bNum = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
+    return bNum - aNum;
+  });
+};
+
+const sortAudioValues = (values: Iterable<string>) => {
+  return Array.from(new Set(
+    Array.from(values, (value) => value.trim().toLowerCase()).filter((value) => value.length > 0),
+  )).sort((a, b) => {
+    const rank = (input: string) => {
+      if (input === "eng") return 0;
+      if (input === "jpn") return 1;
+      return 2;
+    };
+    const diff = rank(a) - rank(b);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  });
+};
+
+const ACTIVE_STATUS_KEYWORDS = ["fetching", "extracting", "downloading"];
+
+const isActiveStatus = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (
+    normalized.startsWith("failed") ||
+    normalized.startsWith("done") ||
+    normalized.includes("no matching") ||
+    normalized.includes("m3u8") ||
+    normalized.includes("no episodes selected")
+  ) {
+    return false;
+  }
+  return ACTIVE_STATUS_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const selectCandidate = (
+  candidates: PreviewItem["sources"],
+  audioPref?: string,
+  resolutionPref?: string,
+) => {
+  if (!candidates.length) {
+    return null;
+  }
+
+  const nonAv1 = candidates.filter((candidate) => candidate.av1 !== "1");
+  let pool = nonAv1.length ? nonAv1 : [...candidates];
+
+  if (audioPref) {
+    const matchingAudio = pool.filter((candidate) => candidate.audio === audioPref);
+    if (matchingAudio.length) {
+      pool = matchingAudio;
+    }
+  }
+
+  if (resolutionPref) {
+    const matchingResolution = pool.filter((candidate) => candidate.resolution === resolutionPref);
+    if (matchingResolution.length) {
+      pool = matchingResolution;
+    }
+  }
+
+  const preferred = [...pool].reverse().find((candidate) => candidate.src.includes("kwik"));
+  return preferred ?? pool[pool.length - 1] ?? null;
+};
+
 interface StatusMap {
   [episode: number]: string;
 }
@@ -82,23 +253,58 @@ function AppContent() {
 
   const [slug, setSlug] = useState("");
   const [episodesSpec, setEpisodesSpec] = useState("");
+  const [episodesSpecError, setEpisodesSpecError] = useState<string | null>(null);
   const [resolution, setResolution] = useState("");
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
   const [threads, setThreads] = useState(2);
-  const [listOnly, setListOnly] = useState(false);
+  const [listOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [episodeSummaries, setEpisodeSummaries] = useState<Record<number, EpisodeSummary>>({});
+  const [episodeSummaryLoading, setEpisodeSummaryLoading] = useState(false);
+  const [episodeSummaryError, setEpisodeSummaryError] = useState<string | null>(null);
   const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
   const [previewData, setPreviewData] = useState<PreviewItem[] | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewCache, setPreviewCache] = useState<Record<number, PreviewItem>>({});
   const [statusMap, setStatusMap] = useState<StatusMap>({});
+  const [downloadPaths, setDownloadPaths] = useState<Record<number, string>>({});
   const [progressMap, setProgressMap] = useState<ProgressMap>({});
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementsCheckResponse | null>(null);
   const [requirementsDialogOpen, setRequirementsDialogOpen] = useState(false);
+  const episodesRequestId = useRef(0);
+  const summaryRequestId = useRef(0);
+  const specUpdateSource = useRef<"input" | "selection" | null>(null);
+
+  const availableResolutions = useMemo(() => {
+    const values = new Set<string>();
+    Object.values(previewCache).forEach((item) => {
+      item.sources.forEach((source) => {
+        if (source.resolution) {
+          values.add(source.resolution);
+        }
+      });
+    });
+    return sortResolutionValues(values);
+  }, [previewCache]);
+
+  const availableAudios = useMemo(() => {
+    const values = new Set<string>();
+    Object.values(previewCache).forEach((item) => {
+      item.sources.forEach((source) => {
+        if (source.audio) {
+          values.add(source.audio);
+        }
+      });
+    });
+
+    return sortAudioValues(values);
+  }, [previewCache]);
 
   const slugMissing = slug.trim().length === 0;
 
@@ -133,7 +339,19 @@ function AppContent() {
 
   useEffect(() => {
     const statusUnlisten = listen<DownloadStatusEvent>("download-status", (event) => {
-      setStatusMap((prev) => ({ ...prev, [event.payload.episode]: event.payload.status }));
+      const { episode, status, path } = event.payload;
+      setStatusMap((prev) => {
+        const next = { ...prev, [episode]: status };
+        const hasActive = Object.entries(next).some(([ep, st]) => {
+          if (Number(ep) === 0) return false;
+          return isActiveStatus(st);
+        });
+        setIsBusy(hasActive);
+        return next;
+      });
+      if (path) {
+        setDownloadPaths((prev) => ({ ...prev, [episode]: path }));
+      }
     });
     const progressUnlisten = listen<DownloadProgressEvent>("download-progress", (event) => {
       setProgressMap((prev) => ({
@@ -197,7 +415,15 @@ function AppContent() {
     setSearchQuery(item.title);
     setEpisodes(null);
     setSelectedEpisodes([]);
+    setEpisodeSummaries({});
+    setEpisodeSummaryLoading(false);
+    setEpisodeSummaryError(null);
+    setPreviewCache({});
+    setEpisodesSpec("");
+    setEpisodesSpecError(null);
+    specUpdateSource.current = null;
     setStatusMap({});
+    setDownloadPaths({});
     setProgressMap({});
     setPreviewData(null);
     setError(null);
@@ -213,6 +439,14 @@ function AppContent() {
       setSlug("");
       setEpisodes(null);
       setSelectedEpisodes([]);
+      setDownloadPaths({});
+      setEpisodeSummaries({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      setPreviewCache({});
+      setEpisodesSpec("");
+      setEpisodesSpecError(null);
+      specUpdateSource.current = null;
       setStatusMap({});
       setProgressMap({});
       setPreviewData(null);
@@ -232,6 +466,32 @@ function AppContent() {
     setResolution(value);
   };
 
+  const handleEpisodesSpecChange = (value: string) => {
+    setEpisodesSpec(value);
+
+    if (!episodes) {
+      setSelectedEpisodes([]);
+      if (value.trim()) {
+        setEpisodesSpecError("Select an anime to load episodes first.");
+      } else {
+        setEpisodesSpecError(null);
+      }
+      return;
+    }
+
+    const available = episodes.episodes.map((ep) => ep.number);
+    const { episodes: parsedEpisodes, error } = parseEpisodeSpec(value, available);
+
+    if (error) {
+      setEpisodesSpecError(error);
+      return;
+    }
+
+    setEpisodesSpecError(null);
+    specUpdateSource.current = "input";
+    setSelectedEpisodes(parsedEpisodes);
+  };
+
   const autocompleteItems: AutocompleteOption[] = useMemo(
     () =>
       searchResults.map((item) => ({
@@ -241,31 +501,231 @@ function AppContent() {
       })),
     [searchResults],
   );
-
-  const handleFetchEpisodes = async () => {
-    if (slugMissing) {
-      setError("Select an anime before fetching episodes.");
+  useEffect(() => {
+    if (!selectedAnime) {
+      setEpisodesLoading(false);
       return;
     }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const data = await fetchEpisodes(slug.trim(), settings.hostUrl, selectedAnime?.title ?? searchQuery);
-      setEpisodes(data);
-      setSelectedEpisodes([]);
-    } catch (err) {
-      console.error(err);
-      setError(String(err));
-    } finally {
-      setIsBusy(false);
+
+    const trimmedSlug = selectedAnime.session.trim();
+    if (!trimmedSlug) {
+      setEpisodesLoading(false);
+      return;
     }
-  };
+
+    const requestId = ++episodesRequestId.current;
+    let active = true;
+
+    setEpisodesLoading(true);
+    setError(null);
+
+    fetchEpisodes(trimmedSlug, settings.hostUrl, selectedAnime.title)
+      .then((data) => {
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodes(data);
+        setSelectedEpisodes([]);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setError(String(err));
+        setEpisodes(null);
+      })
+      .finally(() => {
+        if (!active || episodesRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedAnime, settings.hostUrl]);
+
+  useEffect(() => {
+    if (!episodes || slugMissing) {
+      setEpisodeSummaries({});
+      setPreviewCache({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      summaryRequestId.current += 1;
+      return;
+    }
+
+    const episodeNumbers = episodes.episodes.map((ep) => ep.number);
+    if (!episodeNumbers.length) {
+      setEpisodeSummaries({});
+      setPreviewCache({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      return;
+    }
+
+    const requestId = ++summaryRequestId.current;
+    let active = true;
+
+    setEpisodeSummaries({});
+    setPreviewCache({});
+    setEpisodeSummaryLoading(true);
+    setEpisodeSummaryError(null);
+
+    previewSources(slug, settings.hostUrl, episodeNumbers, episodes)
+      .then((items) => {
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+
+        const cacheMap: Record<number, PreviewItem> = {};
+
+        items.forEach((item) => {
+          cacheMap[item.episode] = item;
+        });
+
+        setPreviewCache(cacheMap);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+        setPreviewCache({});
+        setEpisodeSummaryError(String(err));
+      })
+      .finally(() => {
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodeSummaryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [episodes, slug, settings.hostUrl, slugMissing]);
+
+  useEffect(() => {
+    if (resolutionChoice !== "any" && resolutionChoice !== "custom") {
+      if (!availableResolutions.includes(resolutionChoice)) {
+        setResolutionChoice("any");
+        setResolution("");
+      }
+    }
+  }, [availableResolutions, resolutionChoice]);
+
+  useEffect(() => {
+    if (audio && !availableAudios.includes(audio)) {
+      setAudio("");
+    }
+  }, [availableAudios, audio]);
+
+  useEffect(() => {
+    if (!episodes) {
+      setEpisodeSummaries({});
+      return;
+    }
+
+    const audioPref = audio || undefined;
+    const resolutionPref = resolution || undefined;
+
+    const summaryMap: Record<number, EpisodeSummary> = {};
+
+    episodes.episodes.forEach((ep) => {
+      const preview = previewCache[ep.number];
+      if (!preview) {
+        return;
+      }
+
+      const resValues = new Set<string>();
+      const audioValues = new Set<string>();
+
+      preview.sources.forEach((source) => {
+        if (source.resolution) {
+          resValues.add(source.resolution);
+        }
+        if (source.audio) {
+          audioValues.add(source.audio);
+        }
+      });
+
+      const sortedResolutions = sortResolutionValues(resValues);
+      const sortedAudios = sortAudioValues(audioValues);
+
+      const candidate = selectCandidate(preview.sources, audioPref, resolutionPref);
+      const message = !candidate && (audioPref || resolutionPref)
+        ? "Not available with current filters"
+        : undefined;
+
+      summaryMap[ep.number] = {
+        resolutions: sortedResolutions,
+        audios: sortedAudios,
+        message,
+      };
+    });
+
+    setEpisodeSummaries(summaryMap);
+  }, [previewCache, episodes, audio, resolution]);
+
+  useEffect(() => {
+    if (!episodes) {
+      specUpdateSource.current = "input";
+      setSelectedEpisodes([]);
+      return;
+    }
+
+    if (!episodesSpec.trim()) {
+      setEpisodesSpecError(null);
+      specUpdateSource.current = "input";
+      setSelectedEpisodes([]);
+      return;
+    }
+
+    const available = episodes.episodes.map((ep) => ep.number);
+    const { episodes: parsedEpisodes, error } = parseEpisodeSpec(episodesSpec, available);
+
+    if (error) {
+      setEpisodesSpecError(error);
+      return;
+    }
+
+    setEpisodesSpecError(null);
+    specUpdateSource.current = "input";
+    setSelectedEpisodes(parsedEpisodes);
+  }, [episodes]);
 
   const handleToggleEpisode = (episode: number) => {
     setSelectedEpisodes((prev) =>
       prev.includes(episode) ? prev.filter((n) => n !== episode) : [...prev, episode]
     );
   };
+
+  useEffect(() => {
+    if (specUpdateSource.current === "input") {
+      specUpdateSource.current = null;
+      return;
+    }
+
+    if (!episodes) {
+      if (!episodesSpec && selectedEpisodes.length === 0) {
+        return;
+      }
+      specUpdateSource.current = "selection";
+      setEpisodesSpec("");
+      setEpisodesSpecError(null);
+      specUpdateSource.current = null;
+      return;
+    }
+
+    const formatted = formatEpisodesSpec(selectedEpisodes);
+    specUpdateSource.current = "selection";
+    setEpisodesSpec(formatted);
+    setEpisodesSpecError(null);
+    specUpdateSource.current = null;
+  }, [selectedEpisodes, episodes]);
 
   const handleSelectAll = () => {
     if (!episodes) return;
@@ -274,13 +734,8 @@ function AppContent() {
 
   const handleClearSelection = () => setSelectedEpisodes([]);
 
-  const handleUseSelectionAsSpec = () => {
-    if (!selectedEpisodes.length) return;
-    setEpisodesSpec(selectedEpisodes.sort((a, b) => a - b).join(","));
-  };
-
   const handleChooseDir = async () => {
-    const directory = await open({ directory: true, multiple: false });
+    const directory = await selectDirectory({ directory: true, multiple: false });
     if (directory && typeof directory === "string") {
       const next = { ...settings, downloadDir: directory };
       setSettings(next);
@@ -292,6 +747,16 @@ function AppContent() {
     const next = { ...settings, downloadDir: null };
     setSettings(next);
     await saveSettings(next);
+  };
+
+  const handleOpenDownload = async (path?: string) => {
+    if (!path) return;
+    try {
+      await invoke("open_path", { path });
+    } catch (err) {
+      console.error("Failed to open path", err);
+      setError("Failed to open download folder.");
+    }
   };
 
   const toggleTheme = async (dark: boolean) => {
@@ -315,39 +780,13 @@ function AppContent() {
     await saveSettings(next);
   };
 
-  const handlePreview = async () => {
-    if (!episodes || slugMissing) {
-      setError("Fetch episodes before previewing sources.");
-      return;
-    }
-    const previewEpisodes = selectedEpisodes.length
-      ? selectedEpisodes
-      : episodes.episodes.map((e) => e.number);
-    if (!previewEpisodes.length) {
-      setError("No episodes selected to preview.");
-      return;
-    }
-
-    setIsBusy(true);
-    setError(null);
-    try {
-      const data = await previewSources(slug, settings.hostUrl, previewEpisodes, episodes);
-      setPreviewData(data);
-      setPreviewOpen(true);
-    } catch (err) {
-      console.error(err);
-      setError(String(err));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
   const handleDownload = async () => {
     if (slugMissing) {
       setError("Select an anime before downloading.");
       return;
     }
     setError(null);
+    setIsBusy(true);
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
@@ -378,6 +817,7 @@ function AppContent() {
           console.error("Failed to check requirements after download error:", reqErr);
         }
       }
+      setIsBusy(false);
     }
   };
 
@@ -484,16 +924,23 @@ function AppContent() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm text-muted-foreground">Episodes (spec)</label>
+                <label className="text-sm text-muted-foreground">Episodes (type or select)</label>
                 <Input
                   value={episodesSpec}
-                  onChange={(e) => setEpisodesSpec(e.target.value)}
+                  onChange={(e) => handleEpisodesSpecChange(e.target.value)}
                   placeholder="1,3-5,*"
                 />
+                {episodesSpecError ? (
+                  <p className="text-xs text-destructive">{episodesSpecError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Patterns like <code>1,3-5</code> or <code>*</code> stay in sync with the grid below.
+                  </p>
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Resolution</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
                   <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
                     <SelectTrigger>
                       <SelectValue placeholder="Highest available" />
@@ -501,8 +948,10 @@ function AppContent() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectItem value="any">Highest available</SelectItem>
-                        {RESOLUTION_PRESETS.map((option) => (
-                          <SelectItem key={option} value={option}>{option}p</SelectItem>
+                        {availableResolutions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {formatResolutionLabel(option)}
+                          </SelectItem>
                         ))}
                         <SelectItem value="custom">Custom…</SelectItem>
                       </SelectGroup>
@@ -522,7 +971,7 @@ function AppContent() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Audio</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center">Audio</label>
                   <Select
                     value={audio || "any"}
                     onValueChange={(value) => setAudio(value === "any" ? "" : value)}
@@ -533,14 +982,26 @@ function AppContent() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectItem value="any">Any audio</SelectItem>
-                        <SelectItem value="eng">Dub - ENG</SelectItem>
-                        <SelectItem value="jpn">Sub - JPN</SelectItem>
+                        {availableAudios.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {formatAudioLabel(option)}
+                          </SelectItem>
+                        ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Threads</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center gap-1">
+                    Threads
+                    <div className="relative group">
+                      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />
+                      <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999] pointer-events-none w-80 max-w-[90vw] text-left leading-snug">
+                        Controls how many video segments download in parallel. Higher values can finish episodes faster on fast connections but consume more bandwidth and CPU.
+                        <div className="absolute top-full right-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                      </div>
+                    </div>
+                  </label>
                   <Input
                     type="number"
                     min={2}
@@ -551,13 +1012,6 @@ function AppContent() {
                     }
                   />
                 </div>
-              </div>
-              <div className="flex items-center justify-between rounded-md border border-border/60 bg-background/60 px-3 py-2">
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">List m3u8 only</p>
-                  <p className="text-[11px] text-muted-foreground/70">Emit playlist URLs without downloading.</p>
-                </div>
-                <Switch checked={listOnly} onCheckedChange={(checked) => setListOnly(checked)} />
               </div>
               <div className="space-y-1" data-tour="output-folder">
                 <label className="text-sm text-muted-foreground">Output folder</label>
@@ -575,14 +1029,13 @@ function AppContent() {
                   )}
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button onClick={handleFetchEpisodes} disabled={isBusy || slugMissing} data-tour="fetch-button">
-                  Fetch episodes
-                </Button>
-                <Button variant="outline" onClick={handlePreview} disabled={isBusy || slugMissing} data-tour="preview-button">
-                  Preview sources
-                </Button>
-                <Button variant="default" onClick={handleDownload} disabled={slugMissing} className="sm:col-span-2" data-tour="download-button">
+              <div>
+                <Button
+                  variant="default"
+                  onClick={handleDownload}
+                  disabled={slugMissing || isBusy}
+                  data-tour="download-button"
+                >
                   Download
                 </Button>
               </div>
@@ -598,10 +1051,20 @@ function AppContent() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-3">
+              {episodeSummaryError && (
+                <p className="text-xs text-destructive">
+                  Failed to fetch source details: {episodeSummaryError}
+                </p>
+              )}
               {episodes ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                     <span>Fetched: {episodes.episodes.length}</span>
+                    {episodesLoading && (
+                      <span className="flex items-center gap-1 text-xs">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Refreshing…
+                      </span>
+                    )}
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={handleSelectAll}>
                         Select all
@@ -609,15 +1072,22 @@ function AppContent() {
                       <Button variant="outline" size="sm" onClick={handleClearSelection}>
                         Clear
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={handleUseSelectionAsSpec}>
-                        Use as spec
-                      </Button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                  <div className="flex-1">
+                    <div className="grid grid-cols-1 gap-2 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
                       {episodes.episodes.map((ep) => {
                         const checked = selectedEpisodes.includes(ep.number);
+                        const summary = episodeSummaries[ep.number];
+                        const preview = previewCache[ep.number];
+                        const showSpinner = episodeSummaryLoading && !preview;
+                        const resolutionText = summary?.resolutions.length
+                          ? summary.resolutions.map((value) => formatResolutionLabel(value)).join(" / ")
+                          : "—";
+                        const audioText = summary?.audios.length
+                          ? summary.audios.map((value) => formatAudioLabel(value)).join(", ")
+                          : "—";
+
                         return (
                           <label
                             key={ep.number}
@@ -632,18 +1102,42 @@ function AppContent() {
                               checked={checked}
                               onChange={() => handleToggleEpisode(ep.number)}
                             />
-                            <span className="font-medium">E{ep.number}</span>
+                            <div className="flex w-full items-center justify-between gap-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-tight">
+                                <span className="font-medium">E{ep.number}</span>
+                                {showSpinner ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Checking sources…
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Audio: {audioText}</span>
+                                )}
+                                {!showSpinner && summary?.message && (
+                                  <span className="text-xs text-destructive sm:ml-2">{summary.message}</span>
+                                )}
+                              </div>
+                              {!showSpinner && (
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">Res: {resolutionText}</span>
+                              )}
+                            </div>
                           </label>
                         );
                       })}
                     </div>
                   </div>
                 </>
+              ) : episodesLoading ? (
+                <EmptyState
+                  icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
+                  title="Loading episodes"
+                  message="Hang tight while we grab the latest list."
+                />
               ) : (
                 <EmptyState
                   icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
                   title="No episodes yet"
-                  message="Fetch episodes to pick your favorites."
+                  message="Select an anime to load episodes."
                 />
               )}
             </CardContent>
@@ -664,17 +1158,29 @@ function AppContent() {
                   message="Start a download to see detailed progress here."
                 />
               ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
                   {Object.entries(statusMap)
                     .sort((a, b) => Number(a[0]) - Number(b[0]))
                     .map(([episode, status]) => {
                       const progress = progressMap[Number(episode)];
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
+                      const downloadPath = downloadPaths[Number(episode)];
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
-                            <span className="text-muted-foreground">{status}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">{status}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenDownload(downloadPath)}
+                                disabled={!downloadPath}
+                                aria-label="Open download folder"
+                              >
+                                <FolderOpen className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                           {progress && progress.total > 0 && <Progress value={value} />}
                         </li>
