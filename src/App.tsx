@@ -62,6 +62,174 @@ const RESOLUTION_PRESETS = ["1080", "720", "480", "360", "240"] as const;
 const isPresetResolution = (value: string): value is (typeof RESOLUTION_PRESETS)[number] =>
   RESOLUTION_PRESETS.includes(value as (typeof RESOLUTION_PRESETS)[number]);
 
+interface EpisodeSummary {
+  resolutions: string[];
+  audios: string[];
+  message?: string;
+}
+
+const formatEpisodesSpec = (episodes: number[]): string =>
+  episodes
+    .slice()
+    .sort((a, b) => a - b)
+    .join(",");
+
+const parseEpisodeSpec = (value: string, availableEpisodes: number[]): { episodes: number[]; error: string | null } => {
+  const cleaned = value.trim();
+  if (!cleaned) {
+    return { episodes: [], error: null };
+  }
+
+  const parts = cleaned
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return { episodes: [], error: null };
+  }
+
+  const sortedAvailable = [...availableEpisodes].sort((a, b) => a - b);
+  if (!sortedAvailable.length) {
+    return { episodes: [], error: "No episodes available to match." };
+  }
+
+  const availableSet = new Set(sortedAvailable);
+
+  if (parts.some((part) => part.includes("*"))) {
+    return { episodes: sortedAvailable, error: null };
+  }
+
+  const result = new Set<number>();
+
+  for (const part of parts) {
+    const rangeParts = part.split("-").map((n) => n.trim());
+    if (rangeParts.length === 2) {
+      const [startStr, endStr] = rangeParts;
+      if (!startStr || !endStr) {
+        return { episodes: [], error: `Range '${part}' is incomplete.` };
+      }
+      const start = Number(startStr);
+      const end = Number(endStr);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) {
+        return { episodes: [], error: `Range '${part}' must use whole numbers.` };
+      }
+      if (start > end) {
+        return { episodes: [], error: `Range '${part}' is inverted.` };
+      }
+      for (let current = start; current <= end; current += 1) {
+        if (!availableSet.has(current)) {
+          return { episodes: [], error: `Episode ${current} is not available.` };
+        }
+        result.add(current);
+      }
+      continue;
+    }
+
+    const numberValue = Number(part);
+    if (!Number.isInteger(numberValue)) {
+      return { episodes: [], error: `'${part}' is not a valid episode number.` };
+    }
+    if (!availableSet.has(numberValue)) {
+      return { episodes: [], error: `Episode ${numberValue} is not available.` };
+    }
+    result.add(numberValue);
+  }
+
+  return { episodes: [...result].sort((a, b) => a - b), error: null };
+};
+
+const formatResolutionLabel = (value: string) => {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return `${trimmed}p`;
+  }
+  return trimmed;
+};
+
+const formatAudioLabel = (value: string) => {
+  switch (value.trim().toLowerCase()) {
+    case "eng":
+      return "Dub (ENG)";
+    case "jpn":
+      return "Sub (JPN)";
+    case "ja":
+      return "Sub (JA)";
+    default:
+      return value.trim().toUpperCase();
+  }
+};
+
+const sortResolutionValues = (values: Iterable<string>) => {
+  return Array.from(new Set(
+    Array.from(values, (value) => value.trim()).filter((value) => value.length > 0),
+  )).sort((a, b) => {
+    const aNum = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
+    const bNum = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
+    return bNum - aNum;
+  });
+};
+
+const sortAudioValues = (values: Iterable<string>) => {
+  return Array.from(new Set(
+    Array.from(values, (value) => value.trim().toLowerCase()).filter((value) => value.length > 0),
+  )).sort((a, b) => {
+    const rank = (input: string) => {
+      if (input === "eng") return 0;
+      if (input === "jpn") return 1;
+      return 2;
+    };
+    const diff = rank(a) - rank(b);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  });
+};
+
+const ACTIVE_STATUS_KEYWORDS = ["fetching", "extracting", "downloading"];
+
+const isActiveStatus = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (
+    normalized.startsWith("failed") ||
+    normalized.startsWith("done") ||
+    normalized.includes("no matching") ||
+    normalized.includes("m3u8") ||
+    normalized.includes("no episodes selected")
+  ) {
+    return false;
+  }
+  return ACTIVE_STATUS_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const selectCandidate = (
+  candidates: PreviewItem["sources"],
+  audioPref?: string,
+  resolutionPref?: string,
+) => {
+  if (!candidates.length) {
+    return null;
+  }
+
+  const nonAv1 = candidates.filter((candidate) => candidate.av1 !== "1");
+  let pool = nonAv1.length ? nonAv1 : [...candidates];
+
+  if (audioPref) {
+    const matchingAudio = pool.filter((candidate) => candidate.audio === audioPref);
+    if (matchingAudio.length) {
+      pool = matchingAudio;
+    }
+  }
+
+  if (resolutionPref) {
+    const matchingResolution = pool.filter((candidate) => candidate.resolution === resolutionPref);
+    if (matchingResolution.length) {
+      pool = matchingResolution;
+    }
+  }
+
+  const preferred = [...pool].reverse().find((candidate) => candidate.src.includes("kwik"));
+  return preferred ?? pool[pool.length - 1] ?? null;
+};
+
 interface StatusMap {
   [episode: number]: string;
 }
@@ -83,6 +251,7 @@ function AppContent() {
 
   const [slug, setSlug] = useState("");
   const [episodesSpec, setEpisodesSpec] = useState("");
+  const [episodesSpecError, setEpisodesSpecError] = useState<string | null>(null);
   const [resolution, setResolution] = useState("");
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
@@ -92,9 +261,13 @@ function AppContent() {
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
   const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [episodeSummaries, setEpisodeSummaries] = useState<Record<number, EpisodeSummary>>({});
+  const [episodeSummaryLoading, setEpisodeSummaryLoading] = useState(false);
+  const [episodeSummaryError, setEpisodeSummaryError] = useState<string | null>(null);
   const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
   const [previewData, setPreviewData] = useState<PreviewItem[] | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewCache, setPreviewCache] = useState<Record<number, PreviewItem>>({});
   const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [progressMap, setProgressMap] = useState<ProgressMap>({});
   const [isBusy, setIsBusy] = useState(false);
@@ -102,6 +275,33 @@ function AppContent() {
   const [requirements, setRequirements] = useState<RequirementsCheckResponse | null>(null);
   const [requirementsDialogOpen, setRequirementsDialogOpen] = useState(false);
   const episodesRequestId = useRef(0);
+  const summaryRequestId = useRef(0);
+  const specUpdateSource = useRef<"input" | "selection" | null>(null);
+
+  const availableResolutions = useMemo(() => {
+    const values = new Set<string>();
+    Object.values(previewCache).forEach((item) => {
+      item.sources.forEach((source) => {
+        if (source.resolution) {
+          values.add(source.resolution);
+        }
+      });
+    });
+    return sortResolutionValues(values);
+  }, [previewCache]);
+
+  const availableAudios = useMemo(() => {
+    const values = new Set<string>();
+    Object.values(previewCache).forEach((item) => {
+      item.sources.forEach((source) => {
+        if (source.audio) {
+          values.add(source.audio);
+        }
+      });
+    });
+
+    return sortAudioValues(values);
+  }, [previewCache]);
 
   const slugMissing = slug.trim().length === 0;
 
@@ -136,7 +336,15 @@ function AppContent() {
 
   useEffect(() => {
     const statusUnlisten = listen<DownloadStatusEvent>("download-status", (event) => {
-      setStatusMap((prev) => ({ ...prev, [event.payload.episode]: event.payload.status }));
+      setStatusMap((prev) => {
+        const next = { ...prev, [event.payload.episode]: event.payload.status };
+        const hasActive = Object.entries(next).some(([episode, status]) => {
+          if (Number(episode) === 0) return false;
+          return isActiveStatus(status);
+        });
+        setIsBusy(hasActive);
+        return next;
+      });
     });
     const progressUnlisten = listen<DownloadProgressEvent>("download-progress", (event) => {
       setProgressMap((prev) => ({
@@ -200,6 +408,13 @@ function AppContent() {
     setSearchQuery(item.title);
     setEpisodes(null);
     setSelectedEpisodes([]);
+    setEpisodeSummaries({});
+    setEpisodeSummaryLoading(false);
+    setEpisodeSummaryError(null);
+    setPreviewCache({});
+    setEpisodesSpec("");
+    setEpisodesSpecError(null);
+    specUpdateSource.current = null;
     setStatusMap({});
     setProgressMap({});
     setPreviewData(null);
@@ -216,6 +431,13 @@ function AppContent() {
       setSlug("");
       setEpisodes(null);
       setSelectedEpisodes([]);
+      setEpisodeSummaries({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      setPreviewCache({});
+      setEpisodesSpec("");
+      setEpisodesSpecError(null);
+      specUpdateSource.current = null;
       setStatusMap({});
       setProgressMap({});
       setPreviewData(null);
@@ -233,6 +455,32 @@ function AppContent() {
       return;
     }
     setResolution(value);
+  };
+
+  const handleEpisodesSpecChange = (value: string) => {
+    setEpisodesSpec(value);
+
+    if (!episodes) {
+      setSelectedEpisodes([]);
+      if (value.trim()) {
+        setEpisodesSpecError("Select an anime to load episodes first.");
+      } else {
+        setEpisodesSpecError(null);
+      }
+      return;
+    }
+
+    const available = episodes.episodes.map((ep) => ep.number);
+    const { episodes: parsedEpisodes, error } = parseEpisodeSpec(value, available);
+
+    if (error) {
+      setEpisodesSpecError(error);
+      return;
+    }
+
+    setEpisodesSpecError(null);
+    specUpdateSource.current = "input";
+    setSelectedEpisodes(parsedEpisodes);
   };
 
   const autocompleteItems: AutocompleteOption[] = useMemo(
@@ -290,11 +538,185 @@ function AppContent() {
     };
   }, [selectedAnime, settings.hostUrl]);
 
+  useEffect(() => {
+    if (!episodes || slugMissing) {
+      setEpisodeSummaries({});
+      setPreviewCache({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      summaryRequestId.current += 1;
+      return;
+    }
+
+    const episodeNumbers = episodes.episodes.map((ep) => ep.number);
+    if (!episodeNumbers.length) {
+      setEpisodeSummaries({});
+      setPreviewCache({});
+      setEpisodeSummaryLoading(false);
+      setEpisodeSummaryError(null);
+      return;
+    }
+
+    const requestId = ++summaryRequestId.current;
+    let active = true;
+
+    setEpisodeSummaries({});
+    setPreviewCache({});
+    setEpisodeSummaryLoading(true);
+    setEpisodeSummaryError(null);
+
+    previewSources(slug, settings.hostUrl, episodeNumbers, episodes)
+      .then((items) => {
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+
+        const cacheMap: Record<number, PreviewItem> = {};
+
+        items.forEach((item) => {
+          cacheMap[item.episode] = item;
+        });
+
+        setPreviewCache(cacheMap);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+        setPreviewCache({});
+        setEpisodeSummaryError(String(err));
+      })
+      .finally(() => {
+        if (!active || summaryRequestId.current !== requestId) {
+          return;
+        }
+        setEpisodeSummaryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [episodes, slug, settings.hostUrl, slugMissing]);
+
+  useEffect(() => {
+    if (resolutionChoice !== "any" && resolutionChoice !== "custom") {
+      if (!availableResolutions.includes(resolutionChoice)) {
+        setResolutionChoice("any");
+        setResolution("");
+      }
+    }
+  }, [availableResolutions, resolutionChoice]);
+
+  useEffect(() => {
+    if (audio && !availableAudios.includes(audio)) {
+      setAudio("");
+    }
+  }, [availableAudios, audio]);
+
+  useEffect(() => {
+    if (!episodes) {
+      setEpisodeSummaries({});
+      return;
+    }
+
+    const audioPref = audio || undefined;
+    const resolutionPref = resolution || undefined;
+
+    const summaryMap: Record<number, EpisodeSummary> = {};
+
+    episodes.episodes.forEach((ep) => {
+      const preview = previewCache[ep.number];
+      if (!preview) {
+        return;
+      }
+
+      const resValues = new Set<string>();
+      const audioValues = new Set<string>();
+
+      preview.sources.forEach((source) => {
+        if (source.resolution) {
+          resValues.add(source.resolution);
+        }
+        if (source.audio) {
+          audioValues.add(source.audio);
+        }
+      });
+
+      const sortedResolutions = sortResolutionValues(resValues);
+      const sortedAudios = sortAudioValues(audioValues);
+
+      const candidate = selectCandidate(preview.sources, audioPref, resolutionPref);
+      const message = !candidate && (audioPref || resolutionPref)
+        ? "Not available with current filters"
+        : undefined;
+
+      summaryMap[ep.number] = {
+        resolutions: sortedResolutions,
+        audios: sortedAudios,
+        message,
+      };
+    });
+
+    setEpisodeSummaries(summaryMap);
+  }, [previewCache, episodes, audio, resolution]);
+
+  useEffect(() => {
+    if (!episodes) {
+      specUpdateSource.current = "input";
+      setSelectedEpisodes([]);
+      return;
+    }
+
+    if (!episodesSpec.trim()) {
+      setEpisodesSpecError(null);
+      specUpdateSource.current = "input";
+      setSelectedEpisodes([]);
+      return;
+    }
+
+    const available = episodes.episodes.map((ep) => ep.number);
+    const { episodes: parsedEpisodes, error } = parseEpisodeSpec(episodesSpec, available);
+
+    if (error) {
+      setEpisodesSpecError(error);
+      return;
+    }
+
+    setEpisodesSpecError(null);
+    specUpdateSource.current = "input";
+    setSelectedEpisodes(parsedEpisodes);
+  }, [episodes]);
+
   const handleToggleEpisode = (episode: number) => {
     setSelectedEpisodes((prev) =>
       prev.includes(episode) ? prev.filter((n) => n !== episode) : [...prev, episode]
     );
   };
+
+  useEffect(() => {
+    if (specUpdateSource.current === "input") {
+      specUpdateSource.current = null;
+      return;
+    }
+
+    if (!episodes) {
+      if (!episodesSpec && selectedEpisodes.length === 0) {
+        return;
+      }
+      specUpdateSource.current = "selection";
+      setEpisodesSpec("");
+      setEpisodesSpecError(null);
+      specUpdateSource.current = null;
+      return;
+    }
+
+    const formatted = formatEpisodesSpec(selectedEpisodes);
+    specUpdateSource.current = "selection";
+    setEpisodesSpec(formatted);
+    setEpisodesSpecError(null);
+    specUpdateSource.current = null;
+  }, [selectedEpisodes, episodes]);
 
   const handleSelectAll = () => {
     if (!episodes) return;
@@ -302,11 +724,6 @@ function AppContent() {
   };
 
   const handleClearSelection = () => setSelectedEpisodes([]);
-
-  const handleUseSelectionAsSpec = () => {
-    if (!selectedEpisodes.length) return;
-    setEpisodesSpec(selectedEpisodes.sort((a, b) => a - b).join(","));
-  };
 
   const handleChooseDir = async () => {
     const directory = await open({ directory: true, multiple: false });
@@ -365,11 +782,29 @@ function AppContent() {
       return;
     }
 
+    const missingEpisodes = previewEpisodes.filter((episode) => !previewCache[episode]);
+    if (missingEpisodes.length === 0) {
+      setPreviewData(previewEpisodes.map((episode) => previewCache[episode]!));
+      setPreviewOpen(true);
+      return;
+    }
+
     setIsBusy(true);
     setError(null);
     try {
-      const data = await previewSources(slug, settings.hostUrl, previewEpisodes, episodes);
-      setPreviewData(data);
+      const targets = missingEpisodes;
+      const data = await previewSources(slug, settings.hostUrl, targets, episodes);
+      const updatedMap: Record<number, PreviewItem> = { ...previewCache };
+      data.forEach((item) => {
+        updatedMap[item.episode] = item;
+      });
+      setPreviewCache(updatedMap);
+      const combined = previewEpisodes.map((episode) => updatedMap[episode]);
+      if (combined.some((item) => !item)) {
+        setError("Some episodes are missing source details. Please try again.");
+        return;
+      }
+      setPreviewData(combined as PreviewItem[]);
       setPreviewOpen(true);
     } catch (err) {
       console.error(err);
@@ -385,6 +820,7 @@ function AppContent() {
       return;
     }
     setError(null);
+    setIsBusy(true);
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
@@ -415,6 +851,7 @@ function AppContent() {
           console.error("Failed to check requirements after download error:", reqErr);
         }
       }
+      setIsBusy(false);
     }
   };
 
@@ -521,12 +958,19 @@ function AppContent() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm text-muted-foreground">Episodes (spec)</label>
+                <label className="text-sm text-muted-foreground">Episodes (type or select)</label>
                 <Input
                   value={episodesSpec}
-                  onChange={(e) => setEpisodesSpec(e.target.value)}
+                  onChange={(e) => handleEpisodesSpecChange(e.target.value)}
                   placeholder="1,3-5,*"
                 />
+                {episodesSpecError ? (
+                  <p className="text-xs text-destructive">{episodesSpecError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Patterns like <code>1,3-5</code> or <code>*</code> stay in sync with the grid below.
+                  </p>
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
                 <div className="space-y-1">
@@ -538,8 +982,10 @@ function AppContent() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectItem value="any">Highest available</SelectItem>
-                        {RESOLUTION_PRESETS.map((option) => (
-                          <SelectItem key={option} value={option}>{option}p</SelectItem>
+                        {availableResolutions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {formatResolutionLabel(option)}
+                          </SelectItem>
                         ))}
                         <SelectItem value="custom">Custom…</SelectItem>
                       </SelectGroup>
@@ -570,8 +1016,11 @@ function AppContent() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectItem value="any">Any audio</SelectItem>
-                        <SelectItem value="eng">Dub - ENG</SelectItem>
-                        <SelectItem value="jpn">Sub - JPN</SelectItem>
+                        {availableAudios.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {formatAudioLabel(option)}
+                          </SelectItem>
+                        ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
@@ -612,20 +1061,11 @@ function AppContent() {
                   )}
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button
-                  variant="outline"
-                  onClick={handlePreview}
-                  disabled={isBusy || episodesLoading || slugMissing || !episodes}
-                  data-tour="preview-button"
-                >
-                  Preview sources
-                </Button>
+              <div>
                 <Button
                   variant="default"
                   onClick={handleDownload}
                   disabled={slugMissing || isBusy}
-                  className="sm:col-span-2"
                   data-tour="download-button"
                 >
                   Download
@@ -643,6 +1083,11 @@ function AppContent() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-3">
+              {episodeSummaryError && (
+                <p className="text-xs text-destructive">
+                  Failed to fetch source details: {episodeSummaryError}
+                </p>
+              )}
               {episodes ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -659,15 +1104,22 @@ function AppContent() {
                       <Button variant="outline" size="sm" onClick={handleClearSelection}>
                         Clear
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={handleUseSelectionAsSpec}>
-                        Use as spec
-                      </Button>
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-2">
                       {episodes.episodes.map((ep) => {
                         const checked = selectedEpisodes.includes(ep.number);
+                        const summary = episodeSummaries[ep.number];
+                        const preview = previewCache[ep.number];
+                        const showSpinner = episodeSummaryLoading && !preview;
+                        const resolutionText = summary?.resolutions.length
+                          ? summary.resolutions.map((value) => formatResolutionLabel(value)).join(" / ")
+                          : "—";
+                        const audioText = summary?.audios.length
+                          ? summary.audios.map((value) => formatAudioLabel(value)).join(", ")
+                          : "—";
+
                         return (
                           <label
                             key={ep.number}
@@ -682,7 +1134,25 @@ function AppContent() {
                               checked={checked}
                               onChange={() => handleToggleEpisode(ep.number)}
                             />
-                            <span className="font-medium">E{ep.number}</span>
+                            <div className="flex w-full items-center justify-between gap-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-tight">
+                                <span className="font-medium">E{ep.number}</span>
+                                {showSpinner ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Checking sources…
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Audio: {audioText}</span>
+                                )}
+                                {!showSpinner && summary?.message && (
+                                  <span className="text-xs text-destructive sm:ml-2">{summary.message}</span>
+                                )}
+                              </div>
+                              {!showSpinner && (
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">Res: {resolutionText}</span>
+                              )}
+                            </div>
                           </label>
                         );
                       })}

@@ -29,17 +29,9 @@ export const tourSteps: TourStep[] = [
     id: "episodes-grid",
     title: "Select Episodes",
     content:
-      "Episodes load automatically once you choose an anime. Check the boxes to select specific episodes, or use 'Select all' for the entire series. You can also use the 'Use as spec' button to convert your selection into an episode specification.",
+      "Episodes load automatically once you choose an anime. Use the checkboxes or type patterns like '1,3-5' in the Episodes field—both stay perfectly in sync.",
     target: "[data-tour='episodes-section']",
     placement: "left",
-  },
-  {
-    id: "preview",
-    title: "Preview Sources",
-    content:
-      "Before downloading, you can preview the available video sources. This shows you the different audio/resolution combinations available for your selected episodes.",
-    target: "[data-tour='preview-button']",
-    placement: "right",
   },
   {
     id: "output-folder",
