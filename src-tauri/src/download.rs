@@ -37,16 +37,29 @@ pub async fn download_episode(
     out_base: Option<&Path>,
     host: &str,
     progress: Option<(Arc<AtomicUsize>, Arc<AtomicUsize>)>, // (total, done)
-) -> Result<()> {
-    eprintln!("{} download_episode called: episode={}, threads={}", timestamp(), ep, threads);
+) -> Result<PathBuf> {
+    eprintln!(
+        "{} download_episode called: episode={}, threads={}",
+        timestamp(),
+        ep,
+        threads
+    );
     eprintln!("{} Anime title received: {}", timestamp(), anime_name);
     let base_folder = out_base
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    eprintln!("{} Resolved base output directory: {}", timestamp(), base_folder.display());
+    eprintln!(
+        "{} Resolved base output directory: {}",
+        timestamp(),
+        base_folder.display()
+    );
     let sanitized_name = sanitize(anime_name);
     let out_dir = base_folder.join(&sanitized_name);
-    eprintln!("{} Episode output directory: {}", timestamp(), out_dir.display());
+    eprintln!(
+        "{} Episode output directory: {}",
+        timestamp(),
+        out_dir.display()
+    );
     fs::create_dir_all(&out_dir)?;
     let out_file = out_dir.join(format!("{}.mp4", ep));
     eprintln!(
@@ -57,8 +70,12 @@ pub async fn download_episode(
     );
 
     if threads <= 1 {
-        eprintln!("{} Using single-threaded download with ffmpeg_hls", timestamp());
-        return ffmpeg_hls(m3u8, &out_file, cookie, host, progress.clone()).await;
+        eprintln!(
+            "{} Using single-threaded download with ffmpeg_hls",
+            timestamp()
+        );
+        ffmpeg_hls(m3u8, &out_file, cookie, host, progress.clone()).await?;
+        return Ok(out_file);
     }
 
     // Parallel path
@@ -115,10 +132,7 @@ pub async fn download_episode(
     );
     // Decrypt if key present
     if !key_hex.is_empty() {
-        eprintln!(
-            "{} Beginning segment decryption with OpenSSL",
-            timestamp()
-        );
+        eprintln!("{} Beginning segment decryption with OpenSSL", timestamp());
         decrypt_segments(&work, &key_hex, threads).await?;
         eprintln!("{} Segment decryption complete", timestamp());
     }
@@ -157,7 +171,7 @@ pub async fn download_episode(
     if let Err(e) = fs::remove_dir_all(&work) {
         eprintln!("cleanup failed: {e}");
     }
-    Ok(())
+    Ok(out_file)
 }
 
 async fn ffmpeg_hls(
@@ -193,7 +207,10 @@ async fn ffmpeg_hls(
         done.store(0, Ordering::Relaxed);
     }
 
-    eprintln!("{} Starting ffmpeg execution with 300-second timeout", timestamp());
+    eprintln!(
+        "{} Starting ffmpeg execution with 300-second timeout",
+        timestamp()
+    );
 
     // Wrap ffmpeg execution in timeout to prevent hanging
     let result = timeout(Duration::from_secs(300), async {
@@ -243,19 +260,23 @@ async fn ffmpeg_hls(
 
         let status = child.wait().context("run ffmpeg")?;
         Ok::<_, anyhow::Error>(status)
-    }).await;
+    })
+    .await;
 
     let status = match result {
         Ok(Ok(status)) => {
             eprintln!("{} FFmpeg completed successfully", timestamp());
             status
-        },
+        }
         Ok(Err(e)) => {
             eprintln!("{} FFmpeg failed: {}", timestamp(), e);
             return Err(e);
-        },
+        }
         Err(_) => {
-            eprintln!("{} FFmpeg execution timed out after 300 seconds", timestamp());
+            eprintln!(
+                "{} FFmpeg execution timed out after 300 seconds",
+                timestamp()
+            );
             let _ = child.kill();
             return Err(anyhow!("FFmpeg execution timed out after 300 seconds"));
         }
@@ -469,12 +490,7 @@ async fn decrypt_segments(work_dir: &Path, key_hex: &str, threads: usize) -> Res
             Ok(Ok(())) => {
                 completed += 1;
                 if completed % 25 == 0 || completed == total {
-                    eprintln!(
-                        "{} Decrypted {}/{} segments",
-                        timestamp(),
-                        completed,
-                        total
-                    );
+                    eprintln!("{} Decrypted {}/{} segments", timestamp(), completed, total);
                 }
             }
             Ok(Err(err)) => return Err(err),

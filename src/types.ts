@@ -35,6 +35,7 @@ export interface PreviewItem {
 export interface DownloadStatusEvent {
   episode: number;
   status: string;
+  path?: string | null;
 }
 
 export interface DownloadProgressEvent {

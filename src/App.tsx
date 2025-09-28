@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { open as selectDirectory } from "@tauri-apps/plugin-dialog";
 
 import {
   loadSettings,
@@ -38,6 +39,7 @@ import {
 import {
   DownloadCloud,
   FolderSearch,
+  FolderOpen,
   ListChecks,
   Loader2,
   MonitorPlay,
@@ -257,7 +259,7 @@ function AppContent() {
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
   const [threads, setThreads] = useState(2);
-  const [listOnly, setListOnly] = useState(false);
+  const [listOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
   const [episodesLoading, setEpisodesLoading] = useState(false);
@@ -269,6 +271,7 @@ function AppContent() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewCache, setPreviewCache] = useState<Record<number, PreviewItem>>({});
   const [statusMap, setStatusMap] = useState<StatusMap>({});
+  const [downloadPaths, setDownloadPaths] = useState<Record<number, string>>({});
   const [progressMap, setProgressMap] = useState<ProgressMap>({});
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -336,15 +339,19 @@ function AppContent() {
 
   useEffect(() => {
     const statusUnlisten = listen<DownloadStatusEvent>("download-status", (event) => {
+      const { episode, status, path } = event.payload;
       setStatusMap((prev) => {
-        const next = { ...prev, [event.payload.episode]: event.payload.status };
-        const hasActive = Object.entries(next).some(([episode, status]) => {
-          if (Number(episode) === 0) return false;
-          return isActiveStatus(status);
+        const next = { ...prev, [episode]: status };
+        const hasActive = Object.entries(next).some(([ep, st]) => {
+          if (Number(ep) === 0) return false;
+          return isActiveStatus(st);
         });
         setIsBusy(hasActive);
         return next;
       });
+      if (path) {
+        setDownloadPaths((prev) => ({ ...prev, [episode]: path }));
+      }
     });
     const progressUnlisten = listen<DownloadProgressEvent>("download-progress", (event) => {
       setProgressMap((prev) => ({
@@ -416,6 +423,7 @@ function AppContent() {
     setEpisodesSpecError(null);
     specUpdateSource.current = null;
     setStatusMap({});
+    setDownloadPaths({});
     setProgressMap({});
     setPreviewData(null);
     setError(null);
@@ -431,6 +439,7 @@ function AppContent() {
       setSlug("");
       setEpisodes(null);
       setSelectedEpisodes([]);
+      setDownloadPaths({});
       setEpisodeSummaries({});
       setEpisodeSummaryLoading(false);
       setEpisodeSummaryError(null);
@@ -726,7 +735,7 @@ function AppContent() {
   const handleClearSelection = () => setSelectedEpisodes([]);
 
   const handleChooseDir = async () => {
-    const directory = await open({ directory: true, multiple: false });
+    const directory = await selectDirectory({ directory: true, multiple: false });
     if (directory && typeof directory === "string") {
       const next = { ...settings, downloadDir: directory };
       setSettings(next);
@@ -738,6 +747,16 @@ function AppContent() {
     const next = { ...settings, downloadDir: null };
     setSettings(next);
     await saveSettings(next);
+  };
+
+  const handleOpenDownload = async (path?: string) => {
+    if (!path) return;
+    try {
+      await invoke("open_path", { path });
+    } catch (err) {
+      console.error("Failed to open path", err);
+      setError("Failed to open download folder.");
+    }
   };
 
   const toggleTheme = async (dark: boolean) => {
@@ -759,59 +778,6 @@ function AppContent() {
     const next = { ...settings, hostUrl: "https://animepahe.ru" };
     setSettings(next);
     await saveSettings(next);
-  };
-
-  const handlePreview = async () => {
-    if (slugMissing) {
-      setError("Select an anime before previewing sources.");
-      return;
-    }
-    if (episodesLoading) {
-      setError("Episodes are still loading. Try again in a moment.");
-      return;
-    }
-    if (!episodes) {
-      setError("Episodes are not available yet.");
-      return;
-    }
-    const previewEpisodes = selectedEpisodes.length
-      ? selectedEpisodes
-      : episodes.episodes.map((e) => e.number);
-    if (!previewEpisodes.length) {
-      setError("No episodes selected to preview.");
-      return;
-    }
-
-    const missingEpisodes = previewEpisodes.filter((episode) => !previewCache[episode]);
-    if (missingEpisodes.length === 0) {
-      setPreviewData(previewEpisodes.map((episode) => previewCache[episode]!));
-      setPreviewOpen(true);
-      return;
-    }
-
-    setIsBusy(true);
-    setError(null);
-    try {
-      const targets = missingEpisodes;
-      const data = await previewSources(slug, settings.hostUrl, targets, episodes);
-      const updatedMap: Record<number, PreviewItem> = { ...previewCache };
-      data.forEach((item) => {
-        updatedMap[item.episode] = item;
-      });
-      setPreviewCache(updatedMap);
-      const combined = previewEpisodes.map((episode) => updatedMap[episode]);
-      if (combined.some((item) => !item)) {
-        setError("Some episodes are missing source details. Please try again.");
-        return;
-      }
-      setPreviewData(combined as PreviewItem[]);
-      setPreviewOpen(true);
-    } catch (err) {
-      console.error(err);
-      setError(String(err));
-    } finally {
-      setIsBusy(false);
-    }
   };
 
   const handleDownload = async () => {
@@ -1038,13 +1004,6 @@ function AppContent() {
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-between rounded-md border border-border/60 bg-background/60 px-3 py-2">
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">List m3u8 only</p>
-                  <p className="text-[11px] text-muted-foreground/70">Emit playlist URLs without downloading.</p>
-                </div>
-                <Switch checked={listOnly} onCheckedChange={(checked) => setListOnly(checked)} />
-              </div>
               <div className="space-y-1" data-tour="output-folder">
                 <label className="text-sm text-muted-foreground">Output folder</label>
                 <div className="flex items-center gap-2 text-sm">
@@ -1106,8 +1065,8 @@ function AppContent() {
                       </Button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-1 gap-2">
+                  <div className="flex-1">
+                    <div className="grid grid-cols-1 gap-2 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
                       {episodes.episodes.map((ep) => {
                         const checked = selectedEpisodes.includes(ep.number);
                         const summary = episodeSummaries[ep.number];
@@ -1190,17 +1149,29 @@ function AppContent() {
                   message="Start a download to see detailed progress here."
                 />
               ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
                   {Object.entries(statusMap)
                     .sort((a, b) => Number(a[0]) - Number(b[0]))
                     .map(([episode, status]) => {
                       const progress = progressMap[Number(episode)];
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
+                      const downloadPath = downloadPaths[Number(episode)];
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
-                            <span className="text-muted-foreground">{status}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">{status}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenDownload(downloadPath)}
+                                disabled={!downloadPath}
+                                aria-label="Open download folder"
+                              >
+                                <FolderOpen className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                           {progress && progress.total > 0 && <Progress value={value} />}
                         </li>
