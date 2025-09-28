@@ -940,7 +940,7 @@ function AppContent() {
               </div>
               <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Resolution</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
                   <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
                     <SelectTrigger>
                       <SelectValue placeholder="Highest available" />
@@ -971,7 +971,7 @@ function AppContent() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Audio</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center">Audio</label>
                   <Select
                     value={audio || "any"}
                     onValueChange={(value) => setAudio(value === "any" ? "" : value)}
@@ -992,7 +992,16 @@ function AppContent() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Threads</label>
+                  <label className="text-xs text-muted-foreground h-5 flex items-center gap-1">
+                    Threads
+                    <div className="relative group">
+                      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />
+                      <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999] pointer-events-none w-80 max-w-[90vw] text-left leading-snug">
+                        Controls how many video segments download in parallel. Higher values can finish episodes faster on fast connections but consume more bandwidth and CPU.
+                        <div className="absolute top-full right-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                      </div>
+                    </div>
+                  </label>
                   <Input
                     type="number"
                     min={2}
