@@ -29,18 +29,26 @@ interface UpdateDialogProps {
   repoOwner: string;
   repoName: string;
   triggerButton?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function UpdateDialog({
   currentVersion = "1.0.0",
   repoOwner,
   repoName,
-  triggerButton
+  triggerButton,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange
 }: UpdateDialogProps) {
   const [release, setRelease] = useState<GitHubRelease | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  // Use controlled state if provided, otherwise use internal state
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = controlledOnOpenChange || setInternalOpen;
 
   const fetchLatestRelease = async () => {
     setLoading(true);
