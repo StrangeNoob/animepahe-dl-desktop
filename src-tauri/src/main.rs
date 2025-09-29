@@ -20,7 +20,8 @@ fn main() {
             commands::preview_sources,
             commands::start_download,
             commands::check_requirements,
-            commands::open_path
+            commands::open_path,
+            commands::get_app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

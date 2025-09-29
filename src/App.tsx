@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open as selectDirectory } from "@tauri-apps/plugin-dialog";
+import UpdateDialog from "./components/UpdateDialog";
 
 import {
   loadSettings,
@@ -246,6 +247,7 @@ interface ProgressMap {
 function AppContent() {
   const { startTour } = useTour();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [appVersion, setAppVersion] = useState('0.3.0');
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -318,6 +320,11 @@ function AppContent() {
         }
       })
       .catch((err) => console.error("Failed to load settings", err));
+
+    // Load app version from Tauri backend
+    invoke<string>('get_app_version')
+      .then(setAppVersion)
+      .catch((err) => console.error("Failed to load app version", err));
   }, [startTour]);
 
   useEffect(() => {
@@ -869,6 +876,11 @@ function AppContent() {
                   <Button variant="ghost" size="sm" onClick={handleResetHost}>
                     Reset
                   </Button>
+                  <UpdateDialog
+                    currentVersion={appVersion}
+                    repoOwner="StrangeNoob"
+                    repoName="animepahe-dl-desktop"
+                  />
                 </div>
               </div>
             </div>
