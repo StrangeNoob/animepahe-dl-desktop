@@ -89,6 +89,7 @@ jobs:
           else
             npm run tauri build -- ${{ matrix.args }}
           fi
+        shell: bash
 
       - name: Verify build artifacts (Windows)
         if: matrix.platform == 'windows-latest'
