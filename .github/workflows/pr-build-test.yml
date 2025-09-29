@@ -81,7 +81,14 @@ jobs:
         run: npm run build
 
       - name: Build Tauri application
-        run: npm run tauri build -- ${{ matrix.args }}
+        run: |
+          # For cross-compilation builds (ARM64 on Intel runners), skip DMG creation to avoid bundling errors
+          if [[ "${{ matrix.platform }}" == "macos-latest" && "${{ matrix.args }}" == *"aarch64"* ]]; then
+            echo "Building for ARM64 on Intel runner - using app bundle only to avoid DMG creation issues"
+            npm run tauri build -- ${{ matrix.args }} --bundles app
+          else
+            npm run tauri build -- ${{ matrix.args }}
+          fi
 
       - name: Verify build artifacts (Windows)
         if: matrix.platform == 'windows-latest'
@@ -111,6 +118,7 @@ jobs:
         run: |
           echo "Checking macOS build artifacts..."
           TARGET_TRIPLE="${{ contains(matrix.args, 'aarch64') && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}"
+          IS_ARM64="${{ contains(matrix.args, 'aarch64') && 'true' || 'false' }}"
 
           echo "Looking for executable in target directories..."
           find . -name "animepahe-tauri" -type f 2>/dev/null | head -5
@@ -136,9 +144,16 @@ jobs:
 
           if [ "$EXECUTABLE_FOUND" = true ]; then
             echo "Looking for app bundles..."
-            find . -name "*.app" -o -name "*.dmg" 2>/dev/null | head -10 | while read -r file; do
-              echo "Found bundle: $file"
-            done
+            if [ "$IS_ARM64" = "true" ]; then
+              echo "Note: ARM64 builds only create .app bundle (DMG creation skipped for cross-compilation)"
+              find . -name "*.app" 2>/dev/null | head -10 | while read -r file; do
+                echo "Found app bundle: $file"
+              done
+            else
+              find . -name "*.app" -o -name "*.dmg" 2>/dev/null | head -10 | while read -r file; do
+                echo "Found bundle: $file"
+              done
+            fi
           else
             echo "❌ macOS executable not found in expected locations"
             echo "Searching for build artifacts in workspace..."
