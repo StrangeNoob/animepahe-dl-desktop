@@ -2,6 +2,9 @@ import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open as selectDirectory } from "@tauri-apps/plugin-dialog";
+import UpdateDialog from "./components/UpdateDialog";
+import { SplashScreen } from "./components/SplashScreen";
+import { checkForUpdates } from "./utils/updateChecker";
 
 import {
   loadSettings,
@@ -246,6 +249,9 @@ interface ProgressMap {
 function AppContent() {
   const { startTour } = useTour();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [appVersion, setAppVersion] = useState('0.2.5');
+  const [showSplash, setShowSplash] = useState(true);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -309,15 +315,38 @@ function AppContent() {
   const slugMissing = slug.trim().length === 0;
 
   useEffect(() => {
-    loadSettings()
-      .then((loadedSettings) => {
+    const initializeApp = async () => {
+      try {
+        // Load settings
+        const loadedSettings = await loadSettings();
         setSettings(loadedSettings);
-        // Auto-start tour for first-time users
-        if (!loadedSettings.tourCompleted) {
+
+        // Load app version from Tauri backend
+        const version = await invoke<string>('get_app_version');
+        setAppVersion(version);
+
+        // Check for updates (with 5 second timeout)
+        const updateInfo = await checkForUpdates(version, 'StrangeNoob', 'animepahe-dl-desktop', 5000);
+
+        // Hide splash screen after check completes
+        setShowSplash(false);
+
+        // If update available, show update dialog
+        if (updateInfo?.updateAvailable) {
+          setTimeout(() => setUpdateDialogOpen(true), 500);
+        }
+
+        // Auto-start tour for first-time users (if no update dialog)
+        if (!loadedSettings.tourCompleted && !updateInfo?.updateAvailable) {
           setTimeout(() => startTour(), 1000);
         }
-      })
-      .catch((err) => console.error("Failed to load settings", err));
+      } catch (err) {
+        console.error("Failed to initialize app", err);
+        setShowSplash(false);
+      }
+    };
+
+    initializeApp();
   }, [startTour]);
 
   useEffect(() => {
@@ -821,6 +850,11 @@ function AppContent() {
     }
   };
 
+  // Show splash screen while initializing
+  if (showSplash) {
+    return <SplashScreen />;
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground transition-colors">
       <div className="pointer-events-none absolute -left-20 top-10 h-64 w-64 rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-cyan-400/30 blur-3xl" />
@@ -869,6 +903,13 @@ function AppContent() {
                   <Button variant="ghost" size="sm" onClick={handleResetHost}>
                     Reset
                   </Button>
+                  <UpdateDialog
+                    currentVersion={appVersion}
+                    repoOwner="StrangeNoob"
+                    repoName="animepahe-dl-desktop"
+                    open={updateDialogOpen}
+                    onOpenChange={setUpdateDialogOpen}
+                  />
                 </div>
               </div>
             </div>
