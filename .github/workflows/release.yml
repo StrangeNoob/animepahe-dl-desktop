@@ -65,9 +65,39 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Import Build Pipeline Secrets
+        id: build_secrets
+        uses: Infisical/secrets-action@v1.0.7
+        with:
+          method: "universal-auth"
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: "prod"
+          secret-path: "/Build-Pipeline"
+
+      - name: Import Environment Variables
+        id: env_vars
+        uses: Infisical/secrets-action@v1.0.7
+        with:
+          method: "universal-auth"
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: "prod"
+          secret-path: "/Env-Variables"
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_CODE_SIGNING: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.build_secrets.outputs.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ steps.build_secrets.outputs.APPLE_ID }}
+          APPLE_PASSWORD: ${{ steps.build_secrets.outputs.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ steps.build_secrets.outputs.APPLE_TEAM_ID }}
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
           releaseName: "App v__VERSION__"
