@@ -65,39 +65,39 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Import Build Pipeline Secrets
-        id: build_secrets
-        uses: Infisical/secrets-action@v1.0.7
-        with:
-          method: "universal-auth"
-          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
-          env-slug: "prod"
-          secret-path: "/Build-Pipeline"
+      - name: Sign ffmpeg binary (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          # Decode and import the certificate
+          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > certificate.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
 
-      - name: Import Environment Variables
-        id: env_vars
-        uses: Infisical/secrets-action@v1.0.7
-        with:
-          method: "universal-auth"
-          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
-          env-slug: "prod"
-          secret-path: "/Env-Variables"
+          # Sign the ffmpeg binary with hardened runtime
+          codesign --force --options runtime --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp src-tauri/resources/ffmpeg/macos/ffmpeg
+
+          # Verify the signature
+          codesign --verify --verbose src-tauri/resources/ffmpeg/macos/ffmpeg
+
+          # Clean up
+          security delete-keychain build.keychain
+          rm certificate.p12
+        shell: bash
 
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ENABLE_CODE_SIGNING: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ steps.build_secrets.outputs.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.build_secrets.outputs.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ steps.build_secrets.outputs.APPLE_ID }}
-          APPLE_PASSWORD: ${{ steps.build_secrets.outputs.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ steps.build_secrets.outputs.APPLE_TEAM_ID }}
+          ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
           releaseName: "App v__VERSION__"
