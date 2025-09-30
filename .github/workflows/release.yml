@@ -69,7 +69,8 @@ jobs:
         id: build_secrets
         uses: Infisical/secrets-action@v1.0.7
         with:
-          token: ${{ secrets.INFISICAL_TOKEN }}
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
           project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
           env-slug: "prod"
           secret-path: "/Build-Pipeline"
@@ -78,7 +79,8 @@ jobs:
         id: env_vars
         uses: Infisical/secrets-action@v1.0.7
         with:
-          token: ${{ secrets.INFISICAL_TOKEN }}
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
           project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
           env-slug: "prod"
           secret-path: "/Env-Variables"
