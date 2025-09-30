@@ -77,10 +77,10 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
 
           # Sign the ffmpeg binary with hardened runtime
-          codesign --force --options runtime --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp resources/ffmpeg/macos/ffmpeg
+          codesign --force --options runtime --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp src-tauri/resources/ffmpeg/macos/ffmpeg
 
           # Verify the signature
-          codesign --verify --verbose resources/ffmpeg/macos/ffmpeg
+          codesign --verify --verbose src-tauri/resources/ffmpeg/macos/ffmpeg
 
           # Clean up
           security delete-keychain build.keychain
