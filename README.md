@@ -89,6 +89,61 @@ cargo build -p animepahe-tauri --release --locked
 
 Theme, base URL, and output directory are editable on the toolbar and persist between runs.
 
+## Analytics & Privacy
+
+Animepahe DL Desktop includes **optional, privacy-conscious analytics** to help us improve the app. Analytics are **enabled by default** but can be disabled at any time.
+
+### What We Track
+
+We collect **anonymous usage data** to understand how the app is used and identify areas for improvement:
+
+- **User Actions**: Search, selection, and download events (counts and durations only)
+- **App Usage**: Launch, session duration, settings changes
+- **Feature Usage**: Tour interactions, requirements checks
+- **Performance**: Search speed, download speed, startup time (all categorized)
+- **Errors**: Error types only (no messages, stack traces, or personal data)
+
+### What We DON'T Track
+
+We take your privacy seriously and **never collect**:
+
+- ❌ Anime titles or search queries
+- ❌ File names or paths
+- ❌ Personal information
+- ❌ IP addresses (PostHog anonymization)
+- ❌ Exact error messages or stack traces
+- ❌ System specifications beyond OS type
+
+### How to Disable Analytics
+
+**In the App:**
+1. Toggle off "Share anonymous usage data" in the settings section
+2. Click "View Details" to see exactly what's tracked
+3. Use the Analytics Dashboard to reset your ID or clear data
+
+**Via Environment Variables:**
+
+Create a `.env` file in the project root:
+
+```env
+# Disable analytics completely
+VITE_ENABLE_ANALYTICS=false
+
+# Or configure PostHog (optional)
+VITE_POSTHOG_KEY=your_posthog_key_here
+VITE_POSTHOG_HOST=https://app.posthog.com
+```
+
+**For Developers:**
+
+If you're building from source, analytics are automatically disabled in development mode unless explicitly configured.
+
+### Learn More
+
+For complete details about data collection and your rights:
+- View the [Privacy Policy](PRIVACY.md)
+- Check the in-app Analytics Dashboard (Settings → View Details)
+
 ## Packaging & Releases
 
 - `npm run tauri build` bundles the front end and emits cross-platform artifacts.

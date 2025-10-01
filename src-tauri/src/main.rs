@@ -11,6 +11,7 @@ use crate::settings::AppState;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_settings,

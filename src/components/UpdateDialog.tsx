@@ -7,6 +7,7 @@ import AppleIcon from '../assets/apple.svg?react';
 import WindowsIcon from '../assets/windows.svg?react';
 import LinuxIcon from '../assets/linux.svg?react';
 import PackageIcon from '../assets/package.svg?react';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 interface GitHubRelease {
   tag_name: string;
@@ -243,7 +244,13 @@ export default function UpdateDialog({
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => window.open(asset.browser_download_url, '_blank')}
+                            onClick={async () => {
+                              try {
+                                await openUrl(asset.browser_download_url);
+                              } catch (error) {
+                                console.error('Failed to open download URL:', error);
+                              }
+                            }}
                             className="flex items-center gap-1"
                           >
                             <Download className="w-3 h-3" />
@@ -258,7 +265,13 @@ export default function UpdateDialog({
                 <div className="flex gap-2 pt-4 border-t border-border/60">
                   <Button
                     variant="default"
-                    onClick={() => window.open(release.html_url, '_blank')}
+                    onClick={async () => {
+                      try {
+                        await openUrl(release.html_url);
+                      } catch (error) {
+                        console.error('Failed to open GitHub URL:', error);
+                      }
+                    }}
                     className="flex items-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4" />

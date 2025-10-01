@@ -3,6 +3,7 @@ export interface Settings {
   themeDark: boolean;
   hostUrl: string;
   tourCompleted: boolean;
+  analyticsEnabled: boolean;
 }
 
 export interface SearchItem {

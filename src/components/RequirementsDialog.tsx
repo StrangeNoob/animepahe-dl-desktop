@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, CheckCircle, ExternalLink, RefreshCw, Terminal, XCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Badge } from "./ui/badge";
 import type { RequirementsCheckResponse, RequirementStatus } from "../types";
 import { checkRequirements } from "../api";
+import { usePostHog } from "posthog-js/react";
+import { open } from "@tauri-apps/plugin-shell";
 
 interface RequirementsDialogProps {
   open: boolean;
@@ -19,6 +21,24 @@ const REQUIREMENT_LINKS = {
 
 export function RequirementsDialog({ open, onOpenChange, requirements, onRequirementsUpdate }: RequirementsDialogProps) {
   const [checking, setChecking] = useState(false);
+  const posthog = usePostHog();
+
+  // Track when dialog opens
+  useEffect(() => {
+    if (open && requirements) {
+      posthog?.capture('requirements_checked');
+
+      // Track individual requirement statuses
+      const ffmpegStatus = requirements.requirements.find(r => r.name === 'ffmpeg');
+      const nodeStatus = requirements.requirements.find(r => r.name === 'node');
+
+      posthog?.capture('requirement_status', {
+        ffmpeg_available: ffmpegStatus?.available ?? false,
+        node_available: nodeStatus?.available ?? false,
+        all_available: requirements.allAvailable
+      });
+    }
+  }, [open, requirements, posthog]);
 
   const handleCheckAgain = async () => {
     setChecking(true);
@@ -35,7 +55,7 @@ export function RequirementsDialog({ open, onOpenChange, requirements, onRequire
   const openInstallationGuide = (requirementName: string) => {
     const url = REQUIREMENT_LINKS[requirementName as keyof typeof REQUIREMENT_LINKS];
     if (url) {
-      window.open(url, "_blank");
+      open(url);
     }
   };
 
