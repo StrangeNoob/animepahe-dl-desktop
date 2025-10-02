@@ -54,90 +54,6 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
-      - name: Install Infisical CLI
-        run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            # Windows: Use npx to avoid permission issues
-            npm install -g @infisical/cli || true
-          else
-            # macOS/Linux: Standard global install
-            npm install -g @infisical/cli
-          fi
-        shell: bash
-
-      - name: export env variables
-        env:
-          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
-          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
-        run: |
-          if [ -z "${{ secrets.INFISICAL_CLIENT_ID }}" ] || [ -z "${{ secrets.INFISICAL_CLIENT_SECRET }}" ] || [ -z "${{ secrets.INFISICAL_PROJECT_ID }}" ]; then
-            echo "INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, and INFISICAL_PROJECT_ID are not set"
-            exit 1
-          fi
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            INFISICAL_CMD="npx @infisical/cli"
-          else
-            INFISICAL_CMD="infisical"
-          fi
-
-          # Login to Infisical
-          export INFISICAL_TOKEN=$(${INFISICAL_CMD} login --method=universal-auth --client-id=${{secrets.INFISICAL_CLIENT_ID}} --client-secret=${{secrets.INFISICAL_CLIENT_SECRET}} --silent --plain)
-
-          # Debug: List available folders to understand the structure
-          echo "Listing available folders in Infisical:"
-          ${INFISICAL_CMD} secrets folders --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} || true
-
-          # Debug: List secrets in root to see what's available
-          echo "Listing secrets in root:"
-          ${INFISICAL_CMD} secrets --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} || true
-
-          # For Windows, we need to work around the path resolution issue
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Windows detected - using workaround for path resolution..."
-            
-            # Change to a temporary directory to avoid path conflicts
-            cd /tmp 2>/dev/null || cd $TEMP 2>/dev/null || cd /c/temp 2>/dev/null || true
-            
-            # Try using --secretPath instead of --path, and use relative paths
-            echo "Trying different approaches for Windows..."
-            
-            # Approach 1: Try with quotes and explicit path
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
-              echo "Approach 1 failed, trying approach 2..."
-              # Approach 2: Try without leading slash
-              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/frontend" > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
-                echo "Approach 2 failed, trying approach 3..."
-                # Approach 3: Try root path with filtering (if the folders don't exist, maybe all secrets are in root)
-                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
-                  echo "All approaches failed for frontend secrets"
-                  exit 1
-                }
-              }
-            }
-            
-            # Same for backend
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
-              echo "Backend approach 1 failed, trying approach 2..."
-              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/backend" > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
-                echo "Backend approach 2 failed, trying approach 3..."
-                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
-                  echo "All approaches failed for backend secrets"
-                  exit 1
-                }
-              }
-            }
-            
-            # Return to workspace
-            cd "${GITHUB_WORKSPACE}"
-          else
-            # For Unix systems, use the standard approach
-            echo "Unix system detected - using standard paths..."
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env
-          fi
-        shell: bash
-
       - name: install frontend dependencies with Rollup fix
         run: |
           # Clear node_modules and package-lock first as suggested by Rollup error message
@@ -146,6 +62,13 @@ jobs:
           # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
           npm install
         shell: bash
+
+      - name: Fetch secrets using Node.js script
+        env:
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+        run: node scripts/fetch-secrets.mjs
 
       - name: Fetch secrets using Node.js script
         env:
