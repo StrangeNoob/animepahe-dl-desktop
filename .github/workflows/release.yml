@@ -77,12 +77,18 @@ jobs:
           fi
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             INFISICAL_CMD="npx @infisical/cli"
+            # Windows: Use paths without leading slash to avoid path resolution issues
+            FRONTEND_PATH="Env-Variables/frontend"
+            BACKEND_PATH="Env-Variables/backend"
           else
             INFISICAL_CMD="infisical"
+            # Unix: Use absolute paths with leading slash
+            FRONTEND_PATH="/Env-Variables/frontend"
+            BACKEND_PATH="/Env-Variables/backend"
           fi
           export INFISICAL_TOKEN=$(${INFISICAL_CMD} login --method=universal-auth --client-id=${{secrets.INFISICAL_CLIENT_ID}} --client-secret=${{secrets.INFISICAL_CLIENT_SECRET}} --silent --plain)
-          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env
-          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env
+          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="${FRONTEND_PATH}" > .env
+          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="${BACKEND_PATH}" > src-tauri/.env
         shell: bash
 
       - name: install frontend dependencies with Rollup fix
