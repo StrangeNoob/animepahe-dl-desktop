@@ -131,3 +131,7 @@ function emptyToNull(value?: string): string | null | undefined {
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
 }
+
+export async function cancelDownload(episode: number): Promise<void> {
+  await invoke("cancel_download", { episode });
+}

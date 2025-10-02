@@ -33,6 +33,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "crypto-js": "^4.2.0",
+    "@infisical/sdk": "^2.0.0",
     "lucide-react": "^0.358.0",
     "posthog-js": "^1.268.9",
     "react": "^18.3.0",

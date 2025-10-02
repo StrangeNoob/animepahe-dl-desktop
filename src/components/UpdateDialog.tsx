@@ -145,8 +145,8 @@ export default function UpdateDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {triggerButton || (
-          <Button variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" className="flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" />
             Check Updates
           </Button>
         )}

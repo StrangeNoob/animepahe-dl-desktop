@@ -20,6 +20,7 @@ import {
   previewSources,
   startDownload,
   checkRequirements,
+  cancelDownload,
 } from "./api";
 import type {
   Settings,
@@ -54,6 +55,7 @@ import {
   Search as SearchIcon,
   Sparkles,
   HelpCircle,
+  X,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
 import { RequirementsDialog } from "./components/RequirementsDialog";
@@ -175,6 +177,31 @@ const formatAudioLabel = (value: string) => {
   }
 };
 
+const formatSpeed = (bps: number): string => {
+  if (bps === 0) return "—";
+  if (bps < 1024) return `${bps.toFixed(0)} B/s`;
+  if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
+  return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+};
+
+const formatElapsedTime = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${secs}s`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}h ${mins}m ${secs}s`;
+};
+
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
 const sortResolutionValues = (values: Iterable<string>) => {
   return Array.from(new Set(
     Array.from(values, (value) => value.trim()).filter((value) => value.length > 0),
@@ -253,6 +280,8 @@ interface ProgressMap {
   [episode: number]: {
     done: number;
     total: number;
+    speedBps: number;
+    elapsedSeconds: number;
   };
 }
 
@@ -275,7 +304,7 @@ function AppContent() {
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
-  const [threads, setThreads] = useState(2);
+  const [threads, setThreads] = useState(10);
   const [listOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
@@ -423,6 +452,8 @@ function AppContent() {
         [event.payload.episode]: {
           done: event.payload.done,
           total: event.payload.total,
+          speedBps: event.payload.speedBps,
+          elapsedSeconds: event.payload.elapsedSeconds,
         },
       }));
     });
@@ -903,6 +934,15 @@ function AppContent() {
     } catch (err) {
       console.error("Failed to open path", err);
       setError("Failed to open download folder.");
+    }
+  };
+
+  const handleCancelDownload = async (episode: number) => {
+    try {
+      await cancelDownload(episode);
+    } catch (err) {
+      console.error("Failed to cancel download", err);
+      setError(`Failed to cancel download for episode ${episode}`);
     }
   };
 
@@ -1388,12 +1428,27 @@ function AppContent() {
                       const progress = progressMap[Number(episode)];
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
                       const downloadPath = downloadPaths[Number(episode)];
+                      const isActive = isActiveStatus(status);
+                      const speed = progress?.speedBps ?? 0;
+                      const elapsedSeconds = progress?.elapsedSeconds ?? 0;
+
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">{status}</span>
+                              {isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleCancelDownload(Number(episode))}
+                                  aria-label="Cancel download"
+                                  title="Cancel download"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1405,7 +1460,23 @@ function AppContent() {
                               </Button>
                             </div>
                           </div>
-                          {progress && progress.total > 0 && <Progress value={value} />}
+                          {progress && progress.total > 0 && (
+                            <>
+                              <Progress value={value} />
+                              {isActive && (
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>{formatBytes(progress.done)} / {formatBytes(progress.total)}</span>
+                                    <span>{value.toFixed(1)}%</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Speed: {formatSpeed(speed)}</span>
+                                    <span>Time: {formatElapsedTime(elapsedSeconds)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </li>
                       );
                     })}

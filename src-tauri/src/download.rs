@@ -37,6 +37,7 @@ pub async fn download_episode(
     out_base: Option<&Path>,
     host: &str,
     progress: Option<(Arc<AtomicUsize>, Arc<AtomicUsize>)>, // (total, done)
+    cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<PathBuf> {
     eprintln!(
         "{} download_episode called: episode={}, threads={}",
@@ -74,7 +75,7 @@ pub async fn download_episode(
             "{} Using single-threaded download with ffmpeg_hls",
             timestamp()
         );
-        ffmpeg_hls(m3u8, &out_file, cookie, host, progress.clone()).await?;
+        ffmpeg_hls(m3u8, &out_file, cookie, host, progress.clone(), cancel_rx).await?;
         return Ok(out_file);
     }
 
@@ -85,7 +86,7 @@ pub async fn download_episode(
     }
     fs::create_dir_all(&work)?;
     let playlist_path = work.join("playlist.m3u8");
-    download_to_file(m3u8, &playlist_path, cookie, host).await?;
+    let _ = download_to_file(m3u8, &playlist_path, cookie, host).await?;
 
     // Parse segments and key
     let content = tokiofs::read_to_string(&playlist_path).await?;
@@ -97,13 +98,22 @@ pub async fn download_episode(
     if seg_urls.is_empty() {
         return Err(anyhow!("No segments in playlist"));
     }
+
+    // Calculate total size by fetching content-length from segments
+    let total_bytes = if progress.is_some() {
+        get_total_segment_size(&seg_urls, cookie, host).await.unwrap_or(0)
+    } else {
+        0
+    };
+
     if let Some((total, _done)) = &progress {
-        total.store(seg_urls.len(), Ordering::Relaxed);
+        total.store(total_bytes, Ordering::Relaxed);
     }
     eprintln!(
-        "{} Downloaded playlist with {} segments",
+        "{} Downloaded playlist with {} segments (total size: {} bytes)",
         timestamp(),
-        seg_urls.len()
+        seg_urls.len(),
+        total_bytes
     );
 
     // Key
@@ -123,6 +133,7 @@ pub async fn download_episode(
         cookie,
         host,
         progress.as_ref().map(|p| p.1.clone()),
+        cancel_rx.clone(),
     )
     .await?;
     eprintln!(
@@ -180,6 +191,7 @@ async fn ffmpeg_hls(
     cookie: &str,
     host: &str,
     progress: Option<(Arc<AtomicUsize>, Arc<AtomicUsize>)>,
+    mut cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<()> {
     eprintln!("{} ffmpeg_hls called with m3u8: {}", timestamp(), m3u8);
     let ffmpeg = resolve_ffmpeg()?;
@@ -219,6 +231,15 @@ async fn ffmpeg_hls(
             let reader = BufReader::new(stderr);
             let mut duration_ms: Option<usize> = None;
             for raw_line in reader.lines() {
+                // Check for cancellation
+                if let Some(ref mut rx) = cancel_rx {
+                    if *rx.borrow() {
+                        eprintln!("{} Cancellation requested, killing ffmpeg", timestamp());
+                        let _ = child.kill();
+                        return Err(anyhow!("Download cancelled by user"));
+                    }
+                }
+
                 let line = raw_line.context("read ffmpeg stderr")?;
                 eprintln!("{} ffmpeg stderr: {}", timestamp(), line);
                 if let Some((total, done)) = &progress {
@@ -372,7 +393,7 @@ fn resolve_ffmpeg() -> Result<PathBuf> {
     which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))
 }
 
-async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> Result<()> {
+async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> Result<usize> {
     let client = create_client();
     let resp = client
         .get(url)
@@ -382,8 +403,64 @@ async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> R
         .await?
         .error_for_status()?;
     let content = resp.bytes().await?;
+    let bytes_downloaded = content.len();
     tokiofs::write(path, content).await?;
-    Ok(())
+    Ok(bytes_downloaded)
+}
+
+async fn get_total_segment_size(seg_urls: &[String], cookie: &str, host: &str) -> Result<usize> {
+    let mut total = 0usize;
+    let mut successful = 0usize;
+
+    // Fetch content-length for all segments in parallel
+    let client = create_client();
+    let mut handles = vec![];
+
+    for url in seg_urls.iter() {
+        let client = client.clone();
+        let url = url.clone();
+        let cookie = cookie.to_string();
+        let host = host.to_string();
+
+        let handle = tokio::spawn(async move {
+            let resp = client
+                .head(&url)
+                .header(reqwest::header::REFERER, &host)
+                .header(reqwest::header::COOKIE, &cookie)
+                .send()
+                .await;
+
+            if let Ok(resp) = resp {
+                if let Some(content_length) = resp.headers().get(reqwest::header::CONTENT_LENGTH) {
+                    if let Ok(size_str) = content_length.to_str() {
+                        if let Ok(size) = size_str.parse::<usize>() {
+                            return Some(size);
+                        }
+                    }
+                }
+            }
+            None
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect results
+    for handle in handles {
+        if let Ok(Some(size)) = handle.await {
+            total += size;
+            successful += 1;
+        }
+    }
+
+    eprintln!(
+        "{} Calculated total size from {} segments: {} bytes",
+        timestamp(),
+        successful,
+        total
+    );
+
+    Ok(total)
 }
 
 async fn download_bytes(url: &str, cookie: &str, host: &str) -> Result<Vec<u8>> {
@@ -405,6 +482,7 @@ async fn download_segments(
     cookie: &str,
     host: &str,
     progress_done: Option<Arc<AtomicUsize>>,
+    mut cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<()> {
     let semaphore = Arc::new(tokio::sync::Semaphore::new(threads));
     let mut handles = FuturesUnordered::new();
@@ -420,9 +498,9 @@ async fn download_segments(
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await?;
             let seg_path = work_dir.join(format!("seg_{:06}.ts", i));
-            download_to_file(&url, &seg_path, &cookie, &host).await?;
+            let bytes_downloaded = download_to_file(&url, &seg_path, &cookie, &host).await?;
             if let Some(done) = progress_done {
-                done.fetch_add(1, Ordering::Relaxed);
+                done.fetch_add(bytes_downloaded, Ordering::Relaxed);
             }
             Ok::<(), anyhow::Error>(())
         });
@@ -431,6 +509,14 @@ async fn download_segments(
     }
 
     while let Some(result) = handles.next().await {
+        // Check for cancellation
+        if let Some(ref mut rx) = cancel_rx {
+            if *rx.borrow() {
+                eprintln!("{} Cancellation requested during segment download", timestamp());
+                return Err(anyhow!("Download cancelled by user"));
+            }
+        }
+
         result??;
     }
 

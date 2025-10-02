@@ -65,7 +65,7 @@ export function SettingsDropdown({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="flex items-center gap-2">
           <SettingsIcon className="h-4 w-4" />
           Settings
         </Button>

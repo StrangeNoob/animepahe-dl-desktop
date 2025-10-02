@@ -147,6 +147,13 @@ jobs:
           npm install
         shell: bash
 
+      - name: Fetch secrets using Node.js script
+        env:
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+        run: node scripts/fetch-secrets.mjs
+
       - name: Build frontend
         run: npm run build
 
