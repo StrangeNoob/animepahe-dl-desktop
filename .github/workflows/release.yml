@@ -6,9 +6,6 @@ on:
     branches:
       - release
       - main
-  # push:
-  #   branches:
-  #     - release
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your app, and upload the artifacts to the release.
 
@@ -57,9 +54,35 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
-      - name: install infisical cli
+      - name: Install Infisical CLI
         run: |
-          npm install -g @infisical/cli
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Windows: Use npx to avoid permission issues
+            npm install -g @infisical/cli || true
+          else
+            # macOS/Linux: Standard global install
+            npm install -g @infisical/cli
+          fi
+        shell: bash
+
+      - name: export env variables
+        env:
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+        run: |
+          if [ -z "${{ secrets.INFISICAL_CLIENT_ID }}" ] || [ -z "${{ secrets.INFISICAL_CLIENT_SECRET }}" ] || [ -z "${{ secrets.INFISICAL_PROJECT_ID }}" ]; then
+            echo "INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, and INFISICAL_PROJECT_ID are not set"
+            exit 1
+          fi
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            INFISICAL_CMD="npx @infisical/cli"
+          else
+            INFISICAL_CMD="infisical"
+          fi
+          export INFISICAL_TOKEN=$(${INFISICAL_CMD} login --method=universal-auth --client-id=${{secrets.INFISICAL_CLIENT_ID}} --client-secret=${{secrets.INFISICAL_CLIENT_SECRET}} --silent --plain)
+          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env
+          ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env
 
       - name: install frontend dependencies with Rollup fix
         run: |
@@ -68,10 +91,6 @@ jobs:
           # Use npm install instead of npm ci to handle optional dependencies properly
           # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
           npm install
-          export INFISICAL_TOKEN=$(infisical login --method=universal-auth --client-id=${{secrets.INFISICAL_CLIENT_ID}} --client-secret=${{secrets.INFISICAL_CLIENT_SECRET}} --silent --plain)
-          infisical export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env
-          infisical export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env
-          echo "Successfully Fetched the .env"
         shell: bash
 
       - name: Build frontend
