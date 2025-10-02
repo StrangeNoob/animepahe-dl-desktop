@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - release
-      - main
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your app, and upload the artifacts to the release.
 
@@ -62,13 +61,6 @@ jobs:
           # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
           npm install
         shell: bash
-
-      - name: Fetch secrets using Node.js script
-        env:
-          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
-          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
-        run: node scripts/fetch-secrets.mjs
 
       - name: Fetch secrets using Node.js script
         env:
