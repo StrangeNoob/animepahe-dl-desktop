@@ -86,28 +86,53 @@ jobs:
 
           # Debug: List available folders to understand the structure
           echo "Listing available folders in Infisical:"
-          ${INFISICAL_CMD} secrets list --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/" || true
+          ${INFISICAL_CMD} secrets folders --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} || true
 
-          # Try different path formats for Windows vs Unix
+          # Debug: List secrets in root to see what's available
+          echo "Listing secrets in root:"
+          ${INFISICAL_CMD} secrets --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} || true
+
+          # For Windows, we need to work around the path resolution issue
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            # For Windows, try using forward slashes but with proper escaping
-            echo "Attempting Windows-specific path handling..."
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env || {
-              echo "Failed with /Env-Variables/frontend, trying alternative paths..."
-              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/frontend" > .env || {
-                echo "Failed with Env-Variables/frontend, trying root level..."
-                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/" > .env
+            echo "Windows detected - using workaround for path resolution..."
+            
+            # Change to a temporary directory to avoid path conflicts
+            cd /tmp 2>/dev/null || cd $TEMP 2>/dev/null || cd /c/temp 2>/dev/null || true
+            
+            # Try using --secretPath instead of --path, and use relative paths
+            echo "Trying different approaches for Windows..."
+            
+            # Approach 1: Try with quotes and explicit path
+            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
+              echo "Approach 1 failed, trying approach 2..."
+              # Approach 2: Try without leading slash
+              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/frontend" > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
+                echo "Approach 2 failed, trying approach 3..."
+                # Approach 3: Try root path with filtering (if the folders don't exist, maybe all secrets are in root)
+                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} > "${GITHUB_WORKSPACE}/.env" 2>/dev/null || {
+                  echo "All approaches failed for frontend secrets"
+                  exit 1
+                }
               }
             }
-            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env || {
-              echo "Failed with /Env-Variables/backend, trying alternative paths..."
-              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/backend" > src-tauri/.env || {
-                echo "Failed with Env-Variables/backend, trying root level..."
-                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/" > src-tauri/.env
+            
+            # Same for backend
+            ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
+              echo "Backend approach 1 failed, trying approach 2..."
+              ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="Env-Variables/backend" > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
+                echo "Backend approach 2 failed, trying approach 3..."
+                ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} > "${GITHUB_WORKSPACE}/src-tauri/.env" 2>/dev/null || {
+                  echo "All approaches failed for backend secrets"
+                  exit 1
+                }
               }
             }
+            
+            # Return to workspace
+            cd "${GITHUB_WORKSPACE}"
           else
             # For Unix systems, use the standard approach
+            echo "Unix system detected - using standard paths..."
             ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/frontend" > .env
             ${INFISICAL_CMD} export --env=prod --projectId=${{secrets.INFISICAL_PROJECT_ID}} --path="/Env-Variables/backend" > src-tauri/.env
           fi
