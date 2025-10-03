@@ -3,6 +3,7 @@ export interface Settings {
   themeDark: boolean;
   hostUrl: string;
   tourCompleted: boolean;
+  analyticsEnabled: boolean;
 }
 
 export interface SearchItem {
@@ -42,6 +43,8 @@ export interface DownloadProgressEvent {
   episode: number;
   done: number;
   total: number;
+  speedBps: number; // bytes per second
+  elapsedSeconds: number; // time spent downloading
 }
 
 export interface RequirementStatus {

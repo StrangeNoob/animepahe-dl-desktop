@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 
 use tokio::time::{sleep, Duration};
+use tokio::sync::Mutex as TokioMutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
@@ -10,6 +13,20 @@ use crate::{
     api, download, scrape,
     settings::{self, AppSettings, AppState},
 };
+
+// Track active downloads for cancellation
+#[derive(Clone)]
+pub struct DownloadState {
+    active: Arc<TokioMutex<HashMap<u32, tokio::sync::watch::Sender<bool>>>>,
+}
+
+impl DownloadState {
+    pub fn new() -> Self {
+        Self {
+            active: Arc::new(TokioMutex::new(HashMap::new())),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpisodeInfo {
@@ -181,16 +198,20 @@ struct StatusPayload {
 }
 
 #[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct ProgressPayload {
     episode: u32,
     done: usize,
     total: usize,
+    speed_bps: f64, // bytes per second
+    elapsed_seconds: u64, // time spent downloading
 }
 
 #[tauri::command]
 pub async fn start_download(
     window: Window,
     state: State<'_, AppState>,
+    download_state: State<'_, DownloadState>,
     req: DownloadRequest,
 ) -> Result<(), String> {
     // Check requirements before starting download
@@ -227,6 +248,10 @@ pub async fn start_download(
     let threads = req.threads.max(2);
     let spec = req.episodes_spec.clone().unwrap_or_default();
     let selected = req.selected.clone();
+
+    // Clone the state before spawning to avoid lifetime issues
+    let download_state_arc = (*download_state).clone();
+
     tauri::async_runtime::spawn(async move {
         let episodes: anyhow::Result<Vec<u32>> = if !selected.is_empty() {
             Ok(selected)
@@ -371,33 +396,76 @@ pub async fn start_download(
             let total = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
+            // Create cancellation token for this episode
+            let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+            {
+                let mut active = download_state_arc.active.lock().await;
+                active.insert(episode, cancel_tx);
+            }
+
             let progress_window = window.clone();
             let progress_episode = episode;
             let progress_total = total.clone();
             let progress_done = done.clone();
+            let mut progress_cancel_rx = cancel_rx.clone();
+
+            // Track speed and elapsed time
+            let start_time = std::time::Instant::now();
+            let last_done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let last_time = Arc::new(StdMutex::new(std::time::Instant::now()));
+
+            let progress_last_done = last_done.clone();
+            let progress_last_time = last_time.clone();
+
             let progress_handle: JoinHandle<()> = tauri::async_runtime::spawn(async move {
                 loop {
-                    let t = progress_total.load(std::sync::atomic::Ordering::Relaxed);
-                    let d = progress_done.load(std::sync::atomic::Ordering::Relaxed);
-                    if t > 0 {
-                        let _ = progress_window.emit(
-                            "download-progress",
-                            ProgressPayload {
-                                episode: progress_episode,
-                                done: d,
-                                total: t,
-                            },
-                        );
+                    tokio::select! {
+                        _ = progress_cancel_rx.changed() => {
+                            if *progress_cancel_rx.borrow() {
+                                break;
+                            }
+                        }
+                        _ = sleep(Duration::from_millis(200)) => {
+                            let t = progress_total.load(std::sync::atomic::Ordering::Relaxed);
+                            let d = progress_done.load(std::sync::atomic::Ordering::Relaxed);
+
+                            // Calculate speed
+                            let now = std::time::Instant::now();
+                            let last_d = progress_last_done.swap(d, std::sync::atomic::Ordering::Relaxed);
+                            let elapsed = {
+                                let mut last_t = progress_last_time.lock().unwrap();
+                                let elapsed = now.duration_since(*last_t).as_secs_f64();
+                                *last_t = now;
+                                elapsed
+                            };
+
+                            let speed_bps = if elapsed > 0.0 && d > last_d {
+                                (d - last_d) as f64 / elapsed
+                            } else {
+                                0.0
+                            };
+
+                            if t > 0 {
+                                let elapsed_seconds = start_time.elapsed().as_secs();
+                                let _ = progress_window.emit(
+                                    "download-progress",
+                                    ProgressPayload {
+                                        episode: progress_episode,
+                                        done: d,
+                                        total: t,
+                                        speed_bps,
+                                        elapsed_seconds,
+                                    },
+                                );
+                            }
+                        }
                     }
-                    if t > 0 && d >= t {
-                        break;
-                    }
-                    sleep(Duration::from_millis(200)).await;
                 }
             });
 
             eprintln!("Starting download_episode function for episode {}", episode);
 
+            let download_cancel_rx = cancel_rx.clone();
             let status = download::download_episode(
                 &anime_name,
                 episode,
@@ -407,8 +475,17 @@ pub async fn start_download(
                 download_dir.as_deref(),
                 &host,
                 Some((total.clone(), done.clone())),
+                Some(download_cancel_rx),
             )
             .await;
+
+            // Stop progress tracking and remove from active downloads
+            {
+                let mut active = download_state_arc.active.lock().await;
+                if let Some(tx) = active.remove(&episode) {
+                    let _ = tx.send(true);
+                }
+            }
 
             progress_handle.await.ok();
 
@@ -442,6 +519,20 @@ pub async fn start_download(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_download(
+    download_state: State<'_, DownloadState>,
+    episode: u32,
+) -> Result<(), String> {
+    let mut active = download_state.active.lock().await;
+    if let Some(tx) = active.remove(&episode) {
+        tx.send(true).map_err(|_| "Failed to send cancel signal".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("Episode {} not found in active downloads", episode))
+    }
 }
 
 #[tauri::command]

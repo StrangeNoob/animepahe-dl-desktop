@@ -1,6 +1,7 @@
 name: "publish"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - release
@@ -52,7 +53,6 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
-
       - name: install frontend dependencies with Rollup fix
         run: |
           # Clear node_modules and package-lock first as suggested by Rollup error message
@@ -61,6 +61,13 @@ jobs:
           # This addresses the Rollup native module bug: https://github.com/npm/cli/issues/4828
           npm install
         shell: bash
+
+      - name: Fetch secrets using Node.js script
+        env:
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+        run: node scripts/fetch-secrets.mjs
 
       - name: Build frontend
         run: npm run build

@@ -5,6 +5,12 @@ import { open as selectDirectory } from "@tauri-apps/plugin-dialog";
 import UpdateDialog from "./components/UpdateDialog";
 import { SplashScreen } from "./components/SplashScreen";
 import { checkForUpdates } from "./utils/updateChecker";
+import {
+  measureSearchPerformance,
+  measureDownloadSpeed,
+  trackAppStartupTime,
+  SessionTracker
+} from "./lib/analytics-utils";
 
 import {
   loadSettings,
@@ -14,6 +20,7 @@ import {
   previewSources,
   startDownload,
   checkRequirements,
+  cancelDownload,
 } from "./api";
 import type {
   Settings,
@@ -27,7 +34,6 @@ import type {
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { Switch } from "./components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { Progress } from "./components/ui/progress";
 import { cn } from "./lib/utils";
@@ -49,17 +55,23 @@ import {
   Search as SearchIcon,
   Sparkles,
   HelpCircle,
+  X,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
 import { RequirementsDialog } from "./components/RequirementsDialog";
 import { TourProvider } from "./components/tour/TourProvider";
 import { useTour } from "./components/tour/TourProvider";
+import { PostHogProvider } from "./lib/posthog";
+import { usePostHog } from "posthog-js/react";
+import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
+import { SettingsDropdown } from "./components/SettingsDropdown";
 
 const defaultSettings: Settings = {
   downloadDir: null,
   themeDark: true,
-  hostUrl: "https://animepahe.ru",
+  hostUrl: "https://animepahe.si",
   tourCompleted: false,
+  analyticsEnabled: true,
 };
 
 const RESOLUTION_PRESETS = ["1080", "720", "480", "360", "240"] as const;
@@ -165,6 +177,31 @@ const formatAudioLabel = (value: string) => {
   }
 };
 
+const formatSpeed = (bps: number): string => {
+  if (bps === 0) return "—";
+  if (bps < 1024) return `${bps.toFixed(0)} B/s`;
+  if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
+  return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+};
+
+const formatElapsedTime = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${secs}s`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}h ${mins}m ${secs}s`;
+};
+
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
 const sortResolutionValues = (values: Iterable<string>) => {
   return Array.from(new Set(
     Array.from(values, (value) => value.trim()).filter((value) => value.length > 0),
@@ -243,11 +280,14 @@ interface ProgressMap {
   [episode: number]: {
     done: number;
     total: number;
+    speedBps: number;
+    elapsedSeconds: number;
   };
 }
 
 function AppContent() {
   const { startTour } = useTour();
+  const posthog = usePostHog();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [appVersion, setAppVersion] = useState('0.2.5');
   const [showSplash, setShowSplash] = useState(true);
@@ -264,7 +304,7 @@ function AppContent() {
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
-  const [threads, setThreads] = useState(2);
+  const [threads, setThreads] = useState(10);
   const [listOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
@@ -283,9 +323,11 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementsCheckResponse | null>(null);
   const [requirementsDialogOpen, setRequirementsDialogOpen] = useState(false);
+  const [showAnalyticsDashboard, setShowAnalyticsDashboard] = useState(false);
   const episodesRequestId = useRef(0);
   const summaryRequestId = useRef(0);
   const specUpdateSource = useRef<"input" | "selection" | null>(null);
+  const downloadStartTimes = useRef<Record<number, number>>({});
 
   const availableResolutions = useMemo(() => {
     const values = new Set<string>();
@@ -381,6 +423,28 @@ function AppContent() {
       if (path) {
         setDownloadPaths((prev) => ({ ...prev, [episode]: path }));
       }
+
+      // Track download completion or failure
+      const statusLower = status.toLowerCase();
+      if (statusLower.includes('done')) {
+        posthog?.capture('download_completed', {
+          success: true
+        });
+
+        // Track download performance
+        const startTime = downloadStartTimes.current[episode];
+        const progress = progressMap[episode];
+        if (startTime && progress && progress.total > 0) {
+          const duration = Date.now() - startTime;
+          measureDownloadSpeed(posthog, progress.total, duration);
+          delete downloadStartTimes.current[episode];
+        }
+      } else if (statusLower.includes('failed')) {
+        posthog?.capture('download_completed', {
+          success: false
+        });
+        delete downloadStartTimes.current[episode];
+      }
     });
     const progressUnlisten = listen<DownloadProgressEvent>("download-progress", (event) => {
       setProgressMap((prev) => ({
@@ -388,6 +452,8 @@ function AppContent() {
         [event.payload.episode]: {
           done: event.payload.done,
           total: event.payload.total,
+          speedBps: event.payload.speedBps,
+          elapsedSeconds: event.payload.elapsedSeconds,
         },
       }));
     });
@@ -395,7 +461,34 @@ function AppContent() {
       statusUnlisten.then((fn) => fn());
       progressUnlisten.then((fn) => fn());
     };
-  }, []);
+  }, [posthog]);
+
+  // Session tracking
+  useEffect(() => {
+    if (!posthog) return;
+
+    const sessionTracker = new SessionTracker(posthog);
+
+    const handleFocus = () => {
+      sessionTracker.startSession();
+    };
+
+    const handleBlur = () => {
+      sessionTracker.endSession();
+    };
+
+    // Start session on mount
+    sessionTracker.startSession();
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      sessionTracker.endSession();
+    };
+  }, [posthog]);
 
   useEffect(() => {
     if (resolution && !isPresetResolution(resolution) && customResolution !== resolution) {
@@ -412,11 +505,30 @@ function AppContent() {
 
     let active = true;
     setSearchLoading(true);
+    const searchStartTime = Date.now();
+
+    // Track search event
+    posthog?.capture('anime_searched', {
+      query_length: searchQuery.trim().length,
+      timestamp: new Date().toISOString()
+    });
+
     const timer = window.setTimeout(() => {
       searchAnime(searchQuery.trim(), settings.hostUrl)
         .then((results) => {
           if (active) {
             setSearchResults(results);
+
+            const searchDuration = Date.now() - searchStartTime;
+
+            // Track search results received
+            posthog?.capture('search_results_received', {
+              result_count: results.length,
+              search_duration_ms: searchDuration
+            });
+
+            // Track search performance
+            measureSearchPerformance(posthog, searchDuration, results.length);
           }
         })
         .catch((err) => {
@@ -436,7 +548,7 @@ function AppContent() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [searchQuery, settings.hostUrl]);
+  }, [searchQuery, settings.hostUrl, posthog]);
 
   const handleSelectAnime = (item: SearchItem) => {
     setSelectedAnime(item);
@@ -456,6 +568,11 @@ function AppContent() {
     setProgressMap({});
     setPreviewData(null);
     setError(null);
+
+    // Track anime selection
+    posthog?.capture('anime_selected', {
+      has_episodes: false // Will be updated when episodes are fetched
+    });
   };
 
   const handleSearchInput = (value: string, source: "input" | "selection" = "input") => {
@@ -519,6 +636,14 @@ function AppContent() {
     setEpisodesSpecError(null);
     specUpdateSource.current = "input";
     setSelectedEpisodes(parsedEpisodes);
+
+    // Track episode selection via range/manual input
+    if (parsedEpisodes.length > 0) {
+      const selectionType = value.includes('-') ? 'range' : value === '*' ? 'all' : 'manual';
+      posthog?.capture('episode_selected', {
+        selection_type: selectionType
+      });
+    }
   };
 
   const autocompleteItems: AutocompleteOption[] = useMemo(
@@ -759,9 +884,21 @@ function AppContent() {
   const handleSelectAll = () => {
     if (!episodes) return;
     setSelectedEpisodes(episodes.episodes.map((ep) => ep.number));
+
+    // Track episode selection
+    posthog?.capture('episode_selected', {
+      selection_type: 'all'
+    });
   };
 
-  const handleClearSelection = () => setSelectedEpisodes([]);
+  const handleClearSelection = () => {
+    setSelectedEpisodes([]);
+
+    // Track episode deselection
+    posthog?.capture('episode_selected', {
+      selection_type: 'clear'
+    });
+  };
 
   const handleChooseDir = async () => {
     const directory = await selectDirectory({ directory: true, multiple: false });
@@ -769,6 +906,12 @@ function AppContent() {
       const next = { ...settings, downloadDir: directory };
       setSettings(next);
       await saveSettings(next);
+
+      // Track settings change
+      posthog?.capture('settings_changed', {
+        changed_setting: 'download_directory',
+        theme: settings.themeDark ? 'dark' : 'light'
+      });
     }
   };
 
@@ -776,6 +919,12 @@ function AppContent() {
     const next = { ...settings, downloadDir: null };
     setSettings(next);
     await saveSettings(next);
+
+    // Track settings change
+    posthog?.capture('settings_changed', {
+      changed_setting: 'download_directory',
+      theme: settings.themeDark ? 'dark' : 'light'
+    });
   };
 
   const handleOpenDownload = async (path?: string) => {
@@ -788,10 +937,24 @@ function AppContent() {
     }
   };
 
+  const handleCancelDownload = async (episode: number) => {
+    try {
+      await cancelDownload(episode);
+    } catch (err) {
+      console.error("Failed to cancel download", err);
+      setError(`Failed to cancel download for episode ${episode}`);
+    }
+  };
+
   const toggleTheme = async (dark: boolean) => {
     const next = { ...settings, themeDark: dark };
     setSettings(next);
     await saveSettings(next);
+
+    // Track theme toggle
+    posthog?.capture('theme_toggled', {
+      new_theme: dark ? 'dark' : 'light'
+    });
   };
 
   const handleHostChange = (value: string) => {
@@ -801,12 +964,24 @@ function AppContent() {
 
   const persistHost = async () => {
     await saveSettings(settings);
+
+    // Track settings change
+    posthog?.capture('settings_changed', {
+      changed_setting: 'host_url',
+      theme: settings.themeDark ? 'dark' : 'light'
+    });
   };
 
   const handleResetHost = async () => {
     const next = { ...settings, hostUrl: "https://animepahe.ru" };
     setSettings(next);
     await saveSettings(next);
+
+    // Track settings change
+    posthog?.capture('settings_changed', {
+      changed_setting: 'host_url',
+      theme: settings.themeDark ? 'dark' : 'light'
+    });
   };
 
   const handleDownload = async () => {
@@ -816,6 +991,18 @@ function AppContent() {
     }
     setError(null);
     setIsBusy(true);
+
+    const downloadStartTime = Date.now();
+
+    // Track download initiation
+    posthog?.capture('download_initiated', {
+      episode_count: selectedEpisodes.length,
+      resolution: resolution || 'any',
+      audio: audio || 'any',
+      download_mode: listOnly ? 'list' : 'download',
+      has_custom_dir: !!settings.downloadDir
+    });
+
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
@@ -829,10 +1016,28 @@ function AppContent() {
         selected: selectedEpisodes,
         downloadDir: settings.downloadDir,
       });
+
+      // Record download start time for each episode for performance tracking
+      const now = Date.now();
+      selectedEpisodes.forEach((episode) => {
+        downloadStartTimes.current[episode] = now;
+      });
     } catch (err) {
       console.error(err);
       const errorMessage = String(err);
       setError(errorMessage);
+
+      // Track download error
+      const errorType = errorMessage.includes('Missing required dependencies')
+        ? 'missing_dependencies'
+        : errorMessage.includes('network')
+          ? 'network_error'
+          : 'unknown_error';
+
+      posthog?.capture('download_error', {
+        error_type: errorType,
+        duration_seconds: Math.round((Date.now() - downloadStartTime) / 1000)
+      });
 
       // If the error mentions missing dependencies, check requirements and show dialog
       if (errorMessage.includes("Missing required dependencies")) {
@@ -867,54 +1072,71 @@ function AppContent() {
               <div className="flex items-center gap-2 text-xl font-semibold">
                 <Sparkles className="h-5 w-5 text-primary" />
                 Animepahe DL Desktop
-                {(
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={startTour}
-                    className="ml-2 text-xs"
-                    data-tour-trigger
-                  >
-                    <HelpCircle className="h-3 w-3 mr-1" />
-                    Take Tour
-                  </Button>
-                )}
               </div>
               <p className="text-sm text-muted-foreground">Search, preview, and download anime with neon flair.</p>
             </div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center" data-tour="settings-section">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Light</span>
-                <Switch checked={settings.themeDark} onCheckedChange={toggleTheme} />
-                <span className="text-sm text-muted-foreground">Dark</span>
-              </div>
-              <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
-                <label className="text-xs uppercase tracking-wide text-muted-foreground">Base URL</label>
-                <Input
-                  value={settings.hostUrl}
-                  onChange={(e) => handleHostChange(e.target.value)}
-                  onBlur={persistHost}
-                  className="w-64"
-                />
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={persistHost}>
-                    Save
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={handleResetHost}>
-                    Reset
-                  </Button>
-                  <UpdateDialog
-                    currentVersion={appVersion}
-                    repoOwner="StrangeNoob"
-                    repoName="animepahe-dl-desktop"
-                    open={updateDialogOpen}
-                    onOpenChange={setUpdateDialogOpen}
-                  />
-                </div>
-              </div>
+            <div className="flex items-center gap-2" data-tour="settings-section">
+              <SettingsDropdown
+                settings={settings}
+                onThemeToggle={toggleTheme}
+                onAnalyticsToggle={async (checked) => {
+                  const next = { ...settings, analyticsEnabled: checked };
+                  setSettings(next);
+                  await saveSettings(next);
+
+                  // Track settings change (only if enabling analytics)
+                  if (checked) {
+                    posthog?.capture('settings_changed', {
+                      changed_setting: 'analytics_enabled',
+                      theme: settings.themeDark ? 'dark' : 'light'
+                    });
+                  }
+                }}
+                onHostChange={handleHostChange}
+                onHostSave={persistHost}
+                onHostReset={handleResetHost}
+                onTourStart={startTour}
+                onViewAnalyticsDetails={() => setShowAnalyticsDashboard(true)}
+                showCheckUpdates={false}
+              />
+              <UpdateDialog
+                currentVersion={appVersion}
+                repoOwner="StrangeNoob"
+                repoName="animepahe-dl-desktop"
+                open={updateDialogOpen}
+                onOpenChange={setUpdateDialogOpen}
+              />
             </div>
           </CardContent>
         </Card>
+
+        {/* Analytics Dashboard Dialog */}
+        <Dialog open={showAnalyticsDashboard} onOpenChange={setShowAnalyticsDashboard}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Analytics Dashboard</DialogTitle>
+              <DialogDescription>
+                View what data we collect and manage your analytics preferences
+              </DialogDescription>
+            </DialogHeader>
+            <AnalyticsDashboard
+              enabled={settings.analyticsEnabled}
+              onToggle={async (checked) => {
+                const next = { ...settings, analyticsEnabled: checked };
+                setSettings(next);
+                await saveSettings(next);
+
+                // Track settings change (only if enabling analytics)
+                if (checked) {
+                  posthog?.capture('settings_changed', {
+                    changed_setting: 'analytics_enabled',
+                    theme: settings.themeDark ? 'dark' : 'light'
+                  });
+                }
+              }}
+            />
+          </DialogContent>
+        </Dialog>
 
         <div className="grid gap-6 xl:grid-cols-3">
           <Card className="xl:col-span-1 glass-card overflow-visible">
@@ -1206,12 +1428,27 @@ function AppContent() {
                       const progress = progressMap[Number(episode)];
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
                       const downloadPath = downloadPaths[Number(episode)];
+                      const isActive = isActiveStatus(status);
+                      const speed = progress?.speedBps ?? 0;
+                      const elapsedSeconds = progress?.elapsedSeconds ?? 0;
+
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">{status}</span>
+                              {isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleCancelDownload(Number(episode))}
+                                  aria-label="Cancel download"
+                                  title="Cancel download"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1223,7 +1460,23 @@ function AppContent() {
                               </Button>
                             </div>
                           </div>
-                          {progress && progress.total > 0 && <Progress value={value} />}
+                          {progress && progress.total > 0 && (
+                            <>
+                              <Progress value={value} />
+                              {isActive && (
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>{formatBytes(progress.done)} / {formatBytes(progress.total)}</span>
+                                    <span>{value.toFixed(1)}%</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Speed: {formatSpeed(speed)}</span>
+                                    <span>Time: {formatElapsedTime(elapsedSeconds)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </li>
                       );
                     })}
@@ -1331,8 +1584,13 @@ export default function App() {
   };
 
   return (
-    <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
-      <AppContent />
-    </TourProvider>
+    <PostHogProvider
+      enabled={settings.analyticsEnabled}
+      theme={settings.themeDark ? 'dark' : 'light'}
+    >
+      <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
+        <AppContent />
+      </TourProvider>
+    </PostHogProvider>
   );
 }

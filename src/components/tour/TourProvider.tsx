@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { TourContextType, TourState, Settings } from "../../types";
 import { tourSteps } from "./tourSteps";
 import { TourOverlay } from "./TourOverlay";
+import { usePostHog } from "posthog-js/react";
 
 const TourContext = createContext<TourContextType | undefined>(undefined);
 
@@ -12,11 +13,22 @@ interface TourProviderProps {
 }
 
 export function TourProvider({ children, settings, onSettingsUpdate }: TourProviderProps) {
+  const posthog = usePostHog();
   const [tourState, setTourState] = useState<TourState>({
     isActive: false,
     currentStep: 0,
     steps: tourSteps,
   });
+
+  // Track step changes
+  useEffect(() => {
+    if (tourState.isActive) {
+      posthog?.capture('tour_step_viewed', {
+        step_index: tourState.currentStep,
+        step_id: tourState.steps[tourState.currentStep]?.id
+      });
+    }
+  }, [tourState.currentStep, tourState.isActive, tourState.steps, posthog]);
 
   const startTour = useCallback(() => {
     setTourState((prev) => ({
@@ -24,7 +36,10 @@ export function TourProvider({ children, settings, onSettingsUpdate }: TourProvi
       isActive: true,
       currentStep: 0,
     }));
-  }, []);
+
+    // Track tour start
+    posthog?.capture('tour_started');
+  }, [posthog]);
 
   const endTour = useCallback(async () => {
     setTourState((prev) => ({
@@ -47,6 +62,8 @@ export function TourProvider({ children, settings, onSettingsUpdate }: TourProvi
         };
       } else {
         // Tour completed, end it
+        posthog?.capture('tour_completed');
+
         return {
           ...prev,
           isActive: false,
@@ -54,7 +71,7 @@ export function TourProvider({ children, settings, onSettingsUpdate }: TourProvi
         };
       }
     });
-  }, []);
+  }, [posthog]);
 
   const prevStep = useCallback(() => {
     setTourState((prev) => ({
@@ -71,8 +88,13 @@ export function TourProvider({ children, settings, onSettingsUpdate }: TourProvi
   }, []);
 
   const skipTour = useCallback(() => {
+    // Track tour skip
+    posthog?.capture('tour_skipped', {
+      skipped_at_step: tourState.currentStep
+    });
+
     endTour();
-  }, [endTour]);
+  }, [endTour, posthog, tourState.currentStep]);
 
   const contextValue: TourContextType = {
     tourState,
