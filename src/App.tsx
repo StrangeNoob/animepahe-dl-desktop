@@ -56,6 +56,7 @@ import {
   Sparkles,
   HelpCircle,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
 import { RequirementsDialog } from "./components/RequirementsDialog";
@@ -946,6 +947,56 @@ function AppContent() {
     }
   };
 
+  const handleRetryDownload = async (episode: number) => {
+    if (slugMissing) {
+      setError("Select an anime before retrying download.");
+      return;
+    }
+
+    setError(null);
+
+    // Clear the failed status for this episode
+    setStatusMap((prev) => {
+      const next = { ...prev };
+      delete next[episode];
+      return next;
+    });
+
+    // Track retry event
+    posthog?.capture('download_retry', {
+      episode,
+      resolution: resolution || 'any',
+      audio: audio || 'any'
+    });
+
+    try {
+      await startDownload({
+        animeName: selectedAnime?.title ?? searchQuery,
+        slug,
+        host: settings.hostUrl,
+        resolution,
+        audio,
+        threads,
+        listOnly,
+        selected: [episode], // Only retry this specific episode
+        downloadDir: settings.downloadDir,
+      });
+
+      // Record download start time
+      downloadStartTimes.current[episode] = Date.now();
+    } catch (err) {
+      console.error(err);
+      const errorMessage = String(err);
+      setError(`Failed to retry episode ${episode}: ${errorMessage}`);
+
+      // Track retry error
+      posthog?.capture('download_retry_error', {
+        episode,
+        error_type: errorMessage.includes('network') ? 'network_error' : 'unknown_error'
+      });
+    }
+  };
+
   const toggleTheme = async (dark: boolean) => {
     const next = { ...settings, themeDark: dark };
     setSettings(next);
@@ -1429,15 +1480,24 @@ function AppContent() {
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
                       const downloadPath = downloadPaths[Number(episode)];
                       const isActive = isActiveStatus(status);
+                      const isFailed = status.toLowerCase().startsWith('failed');
                       const speed = progress?.speedBps ?? 0;
                       const elapsedSeconds = progress?.elapsedSeconds ?? 0;
+
+                      // Check if any downloads are still active
+                      const hasActiveDownloads = Object.values(statusMap).some(s => isActiveStatus(s));
+
+                      // Extract error message from status if failed
+                      const errorMessage = isFailed ? status.replace(/^failed:\s*/i, '').trim() : null;
 
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">{status}</span>
+                              <span className={isFailed ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                {isFailed ? "Failed" : status}
+                              </span>
                               {isActive && (
                                 <Button
                                   variant="ghost"
@@ -1447,6 +1507,18 @@ function AppContent() {
                                   title="Cancel download"
                                 >
                                   <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {isFailed && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRetryDownload(Number(episode))}
+                                  disabled={hasActiveDownloads}
+                                  aria-label="Retry download"
+                                  title={hasActiveDownloads ? "Will be available after whole download is complete" : "Retry download"}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
                                 </Button>
                               )}
                               <Button
@@ -1460,6 +1532,11 @@ function AppContent() {
                               </Button>
                             </div>
                           </div>
+                          {errorMessage && (
+                            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2">
+                              <p className="text-xs text-destructive/90 break-words">{errorMessage}</p>
+                            </div>
+                          )}
                           {progress && progress.total > 0 && (
                             <>
                               <Progress value={value} />
