@@ -69,6 +69,11 @@ import { SettingsDropdown } from "./components/SettingsDropdown";
 import { ResumeDownloadsDialog } from "./components/ResumeDownloadsDialog";
 import { ResumeNotificationBanner } from "./components/ResumeNotificationBanner";
 import { useAutoResumeDetection } from "./hooks/useAutoResumeDetection";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
+import { Library as LibraryIcon, Download } from "lucide-react";
+import { LibraryView } from "./components/LibraryView";
+import { DuplicateWarning } from "./components/DuplicateWarning";
+import { useDuplicateDetection } from "./hooks/useDuplicateDetection";
 
 const defaultSettings: Settings = {
   downloadDir: null,
@@ -317,6 +322,15 @@ function AppContent() {
   const [episodeSummaryLoading, setEpisodeSummaryLoading] = useState(false);
   const [episodeSummaryError, setEpisodeSummaryError] = useState<string | null>(null);
   const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
+
+  // Library tab state
+  const [activeTab, setActiveTab] = useState("download");
+
+  // Duplicate detection
+  const { duplicates, isLoading: duplicatesLoading } = useDuplicateDetection(
+    slug || null,
+    selectedEpisodes
+  );
   const [previewData, setPreviewData] = useState<PreviewItem[] | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewCache, setPreviewCache] = useState<Record<number, PreviewItem>>({});
@@ -1002,6 +1016,23 @@ function AppContent() {
     }
   };
 
+  const handleRemoveDuplicates = () => {
+    const duplicateEpisodes = new Set(duplicates.map(d => d.episode));
+    const filtered = selectedEpisodes.filter(ep => !duplicateEpisodes.has(ep));
+    setSelectedEpisodes(filtered);
+
+    // Update the spec to reflect the filtered episodes
+    if (filtered.length === 0) {
+      setEpisodesSpec("");
+    } else {
+      setEpisodesSpec(filtered.join(","));
+    }
+  };
+
+  const handleViewLibrary = () => {
+    setActiveTab("library");
+  };
+
   const toggleTheme = async (dark: boolean) => {
     const next = { ...settings, themeDark: dark };
     setSettings(next);
@@ -1215,14 +1246,36 @@ function AppContent() {
           </DialogContent>
         </Dialog>
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-1 glass-card overflow-visible">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <SearchIcon className="h-5 w-5 text-primary" />
-                Search & Filters
-              </CardTitle>
-            </CardHeader>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+            <TabsTrigger value="download" className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              Download
+            </TabsTrigger>
+            <TabsTrigger value="library" className="flex items-center gap-2">
+              <LibraryIcon className="h-4 w-4" />
+              Library
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="download" className="mt-0">
+            {/* Duplicate Warning */}
+            {duplicates.length > 0 && (
+              <DuplicateWarning
+                duplicates={duplicates}
+                onRemoveDuplicates={handleRemoveDuplicates}
+                onViewLibrary={handleViewLibrary}
+              />
+            )}
+
+            <div className="grid gap-6 xl:grid-cols-3">
+              <Card className="xl:col-span-1 glass-card overflow-visible">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <SearchIcon className="h-5 w-5 text-primary" />
+                    Search & Filters
+                  </CardTitle>
+                </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 <label className="text-sm text-muted-foreground">Anime</label>
@@ -1588,6 +1641,12 @@ function AppContent() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="library" className="mt-0">
+            <LibraryView />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>

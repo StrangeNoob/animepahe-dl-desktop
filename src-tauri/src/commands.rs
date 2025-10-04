@@ -214,6 +214,7 @@ pub async fn start_download(
     download_state: State<'_, DownloadState>,
     window: Window,
     tracker: State<'_, DownloadTracker>,
+    library: State<'_, crate::library::Library>,
     req: StartDownloadRequest,
 ) -> Result<(), String> {
     // Check requirements before starting download
@@ -249,6 +250,7 @@ pub async fn start_download(
     // Clone states before spawning to avoid lifetime issues
     let download_state_arc = (*download_state).clone();
     let tracker_clone = (*tracker).clone();
+    let library_clone = (*library).clone();
 
     tauri::async_runtime::spawn(async move {
         if episodes.is_empty() {
@@ -496,6 +498,22 @@ pub async fn start_download(
                     // Mark download as completed in tracker
                     let _ = tracker_clone.mark_completed(&download_id);
 
+                    // Add to library
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        let file_size = metadata.len() as i64;
+                        let _ = library_clone.add_download(
+                            &anime_name,
+                            &req.anime_slug,
+                            episode as i32,
+                            req.resolution.as_deref(),
+                            req.audio_type.as_deref(),
+                            &path.to_string_lossy(),
+                            file_size,
+                            None, // thumbnail_url
+                            &host,
+                        );
+                    }
+
                     let folder = path
                         .parent()
                         .map(|p| p.to_path_buf())
@@ -650,6 +668,7 @@ pub async fn resume_download(
     state: State<'_, AppState>,
     download_state: State<'_, DownloadState>,
     window: Window,
+    library: State<'_, crate::library::Library>,
 ) -> Result<(), String> {
     // Get the download record
     let record = tracker.get_download(&download_id)
@@ -674,7 +693,7 @@ pub async fn resume_download(
     };
 
     // Start the download
-    start_download(state, download_state, window, tracker, req).await
+    start_download(state, download_state, window, tracker, library, req).await
 }
 
 #[tauri::command]
@@ -698,4 +717,112 @@ pub fn validate_download_integrity(
     download_id: String,
 ) -> Result<bool, String> {
     tracker.validate_file(&download_id)
+}
+
+// Library commands
+
+#[tauri::command]
+pub fn check_episode_downloaded(
+    library: State<'_, crate::library::Library>,
+    slug: String,
+    episode: i32,
+) -> Result<bool, String> {
+    library.check_episode_downloaded(&slug, episode)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_library_entry(
+    library: State<'_, crate::library::Library>,
+    slug: String,
+    episode: i32,
+) -> Result<Option<crate::library::LibraryEntry>, String> {
+    library.get_library_entry(&slug, episode)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_library_entries(
+    library: State<'_, crate::library::Library>,
+) -> Result<Vec<crate::library::LibraryEntry>, String> {
+    library.get_library_entries()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_anime_library(
+    library: State<'_, crate::library::Library>,
+) -> Result<Vec<crate::library::AnimeStats>, String> {
+    library.get_anime_library()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_anime_episodes(
+    library: State<'_, crate::library::Library>,
+    slug: String,
+) -> Result<Vec<crate::library::LibraryEntry>, String> {
+    library.get_anime_episodes(&slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn mark_episode_watched(
+    library: State<'_, crate::library::Library>,
+    id: i64,
+) -> Result<(), String> {
+    library.mark_episode_watched(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_library_entry(
+    library: State<'_, crate::library::Library>,
+    id: i64,
+) -> Result<(), String> {
+    library.delete_library_entry(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_anime_from_library(
+    library: State<'_, crate::library::Library>,
+    slug: String,
+) -> Result<(), String> {
+    library.delete_anime(&slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_library_stats(
+    library: State<'_, crate::library::Library>,
+) -> Result<crate::library::LibraryStats, String> {
+    library.get_library_stats()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn search_library(
+    library: State<'_, crate::library::Library>,
+    query: String,
+) -> Result<Vec<crate::library::AnimeStats>, String> {
+    library.search_library(&query)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_library(
+    library: State<'_, crate::library::Library>,
+) -> Result<String, String> {
+    library.export_library()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_library(
+    library: State<'_, crate::library::Library>,
+    json: String,
+) -> Result<usize, String> {
+    library.import_library(&json)
+        .map_err(|e| e.to_string())
 }

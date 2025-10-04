@@ -103,3 +103,37 @@ export interface DownloadRecord {
   audio_type: string | null;
   resolution: string | null;
 }
+
+// Library types
+export interface LibraryEntry {
+  id: number;
+  anime_name: string;
+  slug: string;
+  episode: number;
+  resolution: string | null;
+  audio: string | null;
+  file_path: string;
+  file_size: number;
+  thumbnail_url: string | null;
+  downloaded_at: number;
+  last_watched: number | null;
+  watch_count: number;
+  duration_seconds: number | null;
+  host: string;
+}
+
+export interface AnimeStats {
+  slug: string;
+  anime_name: string;
+  episode_count: number;
+  total_size: number;
+  thumbnail_url: string | null;
+  last_downloaded: number;
+}
+
+export interface LibraryStats {
+  total_anime: number;
+  total_episodes: number;
+  total_size: number;
+  total_watch_time: number;
+}

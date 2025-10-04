@@ -7,6 +7,9 @@ import type {
   EpisodeInfo,
   RequirementsCheckResponse,
   DownloadRecord,
+  LibraryEntry,
+  AnimeStats,
+  LibraryStats,
 } from "./types";
 
 export async function loadSettings(): Promise<Settings> {
@@ -159,4 +162,53 @@ export async function getAppVersion(): Promise<string> {
 
 export async function openPath(path: string): Promise<void> {
   await invoke("open_path", { path });
+}
+
+// Library API functions
+export async function checkEpisodeDownloaded(slug: string, episode: number): Promise<boolean> {
+  return invoke("check_episode_downloaded", { slug, episode });
+}
+
+export async function getLibraryEntry(slug: string, episode: number): Promise<LibraryEntry | null> {
+  return invoke("get_library_entry", { slug, episode });
+}
+
+export async function getLibraryEntries(): Promise<LibraryEntry[]> {
+  return invoke("get_library_entries");
+}
+
+export async function getAnimeLibrary(): Promise<AnimeStats[]> {
+  return invoke("get_anime_library");
+}
+
+export async function getAnimeEpisodes(slug: string): Promise<LibraryEntry[]> {
+  return invoke("get_anime_episodes", { slug });
+}
+
+export async function markEpisodeWatched(id: number): Promise<void> {
+  await invoke("mark_episode_watched", { id });
+}
+
+export async function deleteLibraryEntry(id: number): Promise<void> {
+  await invoke("delete_library_entry", { id });
+}
+
+export async function deleteAnimeFromLibrary(slug: string): Promise<void> {
+  await invoke("delete_anime_from_library", { slug });
+}
+
+export async function getLibraryStats(): Promise<LibraryStats> {
+  return invoke("get_library_stats");
+}
+
+export async function searchLibrary(query: string): Promise<AnimeStats[]> {
+  return invoke("search_library", { query });
+}
+
+export async function exportLibrary(): Promise<string> {
+  return invoke("export_library");
+}
+
+export async function importLibrary(json: string): Promise<number> {
+  return invoke("import_library", { json });
 }
