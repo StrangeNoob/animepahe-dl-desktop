@@ -66,6 +66,9 @@ import { PostHogProvider } from "./lib/posthog";
 import { usePostHog } from "posthog-js/react";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { SettingsDropdown } from "./components/SettingsDropdown";
+import { ResumeDownloadsDialog } from "./components/ResumeDownloadsDialog";
+import { ResumeNotificationBanner } from "./components/ResumeNotificationBanner";
+import { useAutoResumeDetection } from "./hooks/useAutoResumeDetection";
 
 const defaultSettings: Settings = {
   downloadDir: null,
@@ -329,6 +332,10 @@ function AppContent() {
   const summaryRequestId = useRef(0);
   const specUpdateSource = useRef<"input" | "selection" | null>(null);
   const downloadStartTimes = useRef<Record<number, number>>({});
+
+  // Resume downloads feature
+  const { incompleteCount, showNotification, dismissNotification } = useAutoResumeDetection();
+  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
 
   const availableResolutions = useMemo(() => {
     const values = new Set<string>();
@@ -972,14 +979,12 @@ function AppContent() {
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
-        slug,
-        host: settings.hostUrl,
+        animeSlug: slug,
+        episodes: [episode], // Only retry this specific episode
+        audioType: audio,
         resolution,
-        audio,
-        threads,
-        listOnly,
-        selected: [episode], // Only retry this specific episode
         downloadDir: settings.downloadDir,
+        host: settings.hostUrl,
       });
 
       // Record download start time
@@ -1057,15 +1062,12 @@ function AppContent() {
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
-        slug,
-        host: settings.hostUrl,
+        animeSlug: slug,
+        episodes: selectedEpisodes,
+        audioType: audio,
         resolution,
-        audio,
-        threads,
-        listOnly,
-        episodesSpec: episodesSpec.trim() || undefined,
-        selected: selectedEpisodes,
         downloadDir: settings.downloadDir,
+        host: settings.hostUrl,
       });
 
       // Record download start time for each episode for performance tracking
@@ -1113,6 +1115,21 @@ function AppContent() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground transition-colors">
+      {/* Resume downloads notification banner */}
+      {showNotification && incompleteCount > 0 && (
+        <ResumeNotificationBanner
+          count={incompleteCount}
+          onResume={() => setResumeDialogOpen(true)}
+          onDismiss={dismissNotification}
+        />
+      )}
+
+      {/* Resume downloads dialog */}
+      <ResumeDownloadsDialog
+        open={resumeDialogOpen}
+        onOpenChange={setResumeDialogOpen}
+      />
+
       <div className="pointer-events-none absolute -left-20 top-10 h-64 w-64 rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-cyan-400/30 blur-3xl" />
       <div className="pointer-events-none absolute right-10 bottom-10 h-72 w-72 rounded-full bg-gradient-to-br from-cyan-400/30 via-purple-500/25 to-transparent blur-3xl" />
       <div className="pointer-events-none absolute right-16 top-16 text-5xl opacity-70 animate-pulse">🌸</div>
@@ -1127,6 +1144,15 @@ function AppContent() {
               <p className="text-sm text-muted-foreground">Search, preview, and download anime with neon flair.</p>
             </div>
             <div className="flex items-center gap-2" data-tour="settings-section">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResumeDialogOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Resume Downloads
+              </Button>
               <SettingsDropdown
                 settings={settings}
                 onThemeToggle={toggleTheme}
@@ -1253,7 +1279,7 @@ function AppContent() {
                 )}
               </div>
               <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
-                <div className="space-y-1">
+                <div className="space-y-1 truncate">
                   <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
                   <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
                     <SelectTrigger>
@@ -1285,7 +1311,7 @@ function AppContent() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground h-5 flex items-center">Audio</label>
+                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center">Audio</label>
                   <Select
                     value={audio || "any"}
                     onValueChange={(value) => setAudio(value === "any" ? "" : value)}
@@ -1306,7 +1332,7 @@ function AppContent() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground h-5 flex items-center gap-1">
+                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center gap-1">
                     Threads
                     <div className="relative group">
                       <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />

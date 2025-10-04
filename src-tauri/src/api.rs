@@ -103,48 +103,6 @@ pub async fn resolve_anime_name(
     }
 }
 
-pub async fn expand_episode_spec(
-    spec: &str,
-    slug: &str,
-    cookie: &str,
-    host: &str,
-) -> Result<Vec<u32>> {
-    let mut episodes: Vec<u32> = vec![];
-    let parts: Vec<&str> = spec
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if parts.is_empty() {
-        return Ok(episodes);
-    }
-    // If contains '*', expand to full range from available episodes
-    if parts.iter().any(|p| p.contains('*')) {
-        let eps = fetch_all_episodes(slug, cookie, host).await?;
-        let mut nums: Vec<u32> = eps
-            .iter()
-            .filter_map(|e| e.episode.as_u64().map(|v| v as u32))
-            .collect();
-        nums.sort_unstable();
-        nums.dedup();
-        return Ok(nums);
-    }
-    for p in parts {
-        if let Some((a, b)) = p.split_once('-') {
-            let start: u32 = a.parse().context("parse range start")?;
-            let end: u32 = b.parse().context("parse range end")?;
-            for n in start..=end {
-                episodes.push(n);
-            }
-        } else {
-            let n: u32 = p.parse().context("parse episode number")?;
-            episodes.push(n);
-        }
-    }
-    episodes.sort_unstable();
-    episodes.dedup();
-    Ok(episodes)
-}
 
 pub async fn find_session_for_episode(
     slug: &str,

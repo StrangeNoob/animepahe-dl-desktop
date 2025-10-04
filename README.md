@@ -10,6 +10,7 @@ Animepahe DL Desktop is now a Tauri + React application with a Rust backend. It 
 - 🎯 Precision controls: filter by resolution/audio, enter specs (`1,3-5,*`), or tick episodes from a checklist.
 - 📦 Source preview modal: inspect audio/resolution blends before downloading.
 - 🚀 Robust pipeline: ffmpeg single-thread mode with stderr progress plus multi-thread segment download/decrypt/concat.
+- 🔄 Smart resume downloads: auto-detect incomplete downloads on startup, validate file integrity, and resume from where you left off.
 - 🗂️ Persistent settings: theme, base URL, and download folder stored in the OS config dir.
 - 🛠️ CI-ready: GitHub Actions produces installers/archives for macOS, Windows, and Linux.
 
@@ -81,13 +82,25 @@ cargo build -p animepahe-tauri --release --locked
 
 ## Using the App
 
-1. **Search** – enter a title and click “Search”.
+1. **Search** – enter a title and click "Search".
 2. **Apply** – select a result to fill the slug automatically.
 3. **Fetch** – pull the episode catalogue, then tick entries or type a spec (`1,3-5,*`).
-4. **Preview** – open “Preview sources” to inspect audio/resolution streams.
+4. **Preview** – open "Preview sources" to inspect audio/resolution streams.
 5. **Download** – adjust threads, choose the output folder, and start. Progress events stream live to the UI.
+6. **Resume** – if downloads are interrupted, the app auto-detects them on next launch and shows a notification banner. Click "Resume Downloads" to see all incomplete downloads, validate files, and continue from where you left off.
 
 Theme, base URL, and output directory are editable on the toolbar and persist between runs.
+
+### Download State Persistence
+
+All download progress is automatically tracked and saved to `~/.config/animepahe-dl/download_state.json` (or equivalent OS config directory). This includes:
+
+- Download status (in-progress, completed, failed, cancelled)
+- Progress tracking (downloaded bytes, file size, timestamps)
+- Episode metadata (anime name, slug, audio/resolution settings)
+- Error messages for failed downloads
+
+The app automatically detects incomplete downloads on startup and offers to resume them. You can also manually access the resume dialog via the toolbar button.
 
 ## Analytics & Privacy
 

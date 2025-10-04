@@ -12,6 +12,7 @@ use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager, State, Windo
 use crate::{
     api, download, scrape,
     settings::{self, AppSettings, AppState},
+    download_tracker::{DownloadTracker, DownloadRecord},
 };
 
 // Track active downloads for cancellation
@@ -162,18 +163,18 @@ pub async fn preview_sources(
     Ok(items)
 }
 
+// Request type for start_download command
 #[derive(Debug, Deserialize)]
-pub struct DownloadRequest {
+pub struct StartDownloadRequest {
     pub anime_name: String,
-    pub slug: String,
-    pub host: String,
+    pub anime_slug: String,
+    pub episodes: Vec<u32>,
+    pub audio_type: Option<String>,
     pub resolution: Option<String>,
-    pub audio: Option<String>,
-    pub threads: usize,
-    pub list_only: bool,
-    pub episodes_spec: Option<String>,
-    pub selected: Vec<u32>,
     pub download_dir: Option<String>,
+    pub host: String,
+    #[serde(default)]
+    pub resume_download_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -209,10 +210,11 @@ struct ProgressPayload {
 
 #[tauri::command]
 pub async fn start_download(
-    window: Window,
     state: State<'_, AppState>,
     download_state: State<'_, DownloadState>,
-    req: DownloadRequest,
+    window: Window,
+    tracker: State<'_, DownloadTracker>,
+    req: StartDownloadRequest,
 ) -> Result<(), String> {
     // Check requirements before starting download
     let app_handle = window.app_handle();
@@ -235,57 +237,31 @@ pub async fn start_download(
     }
 
     let cookie = state.cookie();
-    let anime_name = if req.anime_name.is_empty() {
-        req.slug.clone()
-    } else {
-        req.anime_name.clone()
-    };
+    let anime_name = req.anime_name.clone();
     let host = settings::normalize_host(&req.host);
     let download_dir = req
         .download_dir
         .as_ref()
         .map(|p| std::path::PathBuf::from(p));
-    let threads = req.threads.max(2);
-    let spec = req.episodes_spec.clone().unwrap_or_default();
-    let selected = req.selected.clone();
+    let threads = 2; // Default threads
+    let episodes = req.episodes.clone();
 
-    // Clone the state before spawning to avoid lifetime issues
+    // Clone states before spawning to avoid lifetime issues
     let download_state_arc = (*download_state).clone();
+    let tracker_clone = (*tracker).clone();
 
     tauri::async_runtime::spawn(async move {
-        let episodes: anyhow::Result<Vec<u32>> = if !selected.is_empty() {
-            Ok(selected)
-        } else if !spec.trim().is_empty() {
-            api::expand_episode_spec(&spec, &req.slug, &cookie, &host).await
-        } else {
-            Ok(Vec::new())
-        };
-
-        let episodes = match episodes {
-            Ok(e) if !e.is_empty() => e,
-            Ok(_) => {
-                let _ = window.emit(
-                    "download-status",
-                    StatusPayload {
-                        episode: 0,
-                        status: "No episodes selected".into(),
-                        path: None,
-                    },
-                );
-                return;
-            }
-            Err(err) => {
-                let _ = window.emit(
-                    "download-status",
-                    StatusPayload {
-                        episode: 0,
-                        status: format!("Failed: {err}"),
-                        path: None,
-                    },
-                );
-                return;
-            }
-        };
+        if episodes.is_empty() {
+            let _ = window.emit(
+                "download-status",
+                StatusPayload {
+                    episode: 0,
+                    status: "No episodes selected".into(),
+                    path: None,
+                },
+            );
+            return;
+        }
 
         for episode in episodes {
             let _ = window.emit(
@@ -297,7 +273,7 @@ pub async fn start_download(
                 },
             );
 
-            let sess = match api::find_session_for_episode(&req.slug, episode, &cookie, &host).await
+            let sess = match api::find_session_for_episode(&req.anime_slug, episode, &cookie, &host).await
             {
                 Ok(s) => s,
                 Err(err) => {
@@ -312,7 +288,7 @@ pub async fn start_download(
                     continue;
                 }
             };
-            let play_page = format!("{}/play/{}/{}", host, req.slug, sess);
+            let play_page = format!("{}/play/{}/{}", host, req.anime_slug, sess);
             let candidates = match scrape::extract_candidates(&play_page, &cookie).await {
                 Ok(c) => c,
                 Err(err) => {
@@ -329,7 +305,7 @@ pub async fn start_download(
             };
             let chosen = scrape::select_candidate(
                 &candidates,
-                req.audio.as_deref(),
+                req.audio_type.as_deref(),
                 req.resolution.as_deref(),
             );
             let Some(candidate) = chosen else {
@@ -381,17 +357,34 @@ pub async fn start_download(
                 },
             );
 
-            if req.list_only {
-                let _ = window.emit(
-                    "download-status",
-                    StatusPayload {
-                        episode,
-                        status: format!("m3u8: {playlist}"),
-                        path: Some(playlist.clone()),
-                    },
-                );
-                continue;
-            }
+            // Generate expected file path
+            let sanitized_name = sanitize_filename::sanitize(&anime_name);
+            let file_name = format!("{} - Episode {}.mp4", sanitized_name, episode);
+            let file_path = if let Some(ref dir) = download_dir {
+                dir.join(&file_name)
+            } else {
+                PathBuf::from(&file_name)
+            };
+
+            // Create or get download tracker ID
+            let download_id = if let Some(ref resume_id) = req.resume_download_id {
+                resume_id.clone()
+            } else {
+                match tracker_clone.add_download(
+                    anime_name.clone(),
+                    episode as i32,
+                    req.anime_slug.clone(),
+                    file_path.to_string_lossy().to_string(),
+                    req.audio_type.clone(),
+                    req.resolution.clone(),
+                ) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        eprintln!("Failed to create download record: {}", err);
+                        format!("{}-ep{}-{}", req.anime_slug, episode, chrono::Utc::now().timestamp())
+                    }
+                }
+            };
 
             let total = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -416,6 +409,8 @@ pub async fn start_download(
 
             let progress_last_done = last_done.clone();
             let progress_last_time = last_time.clone();
+            let progress_tracker = tracker_clone.clone();
+            let progress_download_id = download_id.clone();
 
             let progress_handle: JoinHandle<()> = tauri::async_runtime::spawn(async move {
                 loop {
@@ -446,6 +441,13 @@ pub async fn start_download(
                             };
 
                             if t > 0 {
+                                // Update tracker with progress
+                                let _ = progress_tracker.update_progress(
+                                    &progress_download_id,
+                                    d as u64,
+                                    Some(t as u64),
+                                );
+
                                 let elapsed_seconds = start_time.elapsed().as_secs();
                                 let _ = progress_window.emit(
                                     "download-progress",
@@ -491,6 +493,9 @@ pub async fn start_download(
 
             match status {
                 Ok(path) => {
+                    // Mark download as completed in tracker
+                    let _ = tracker_clone.mark_completed(&download_id);
+
                     let folder = path
                         .parent()
                         .map(|p| p.to_path_buf())
@@ -505,6 +510,9 @@ pub async fn start_download(
                     );
                 }
                 Err(err) => {
+                    // Mark download as failed in tracker
+                    let _ = tracker_clone.mark_failed(&download_id, err.to_string());
+
                     let _ = window.emit(
                         "download-status",
                         StatusPayload {
@@ -524,11 +532,23 @@ pub async fn start_download(
 #[tauri::command]
 pub async fn cancel_download(
     download_state: State<'_, DownloadState>,
+    tracker: State<'_, DownloadTracker>,
     episode: u32,
 ) -> Result<(), String> {
     let mut active = download_state.active.lock().await;
     if let Some(tx) = active.remove(&episode) {
         tx.send(true).map_err(|_| "Failed to send cancel signal".to_string())?;
+
+        // Find and mark the download as cancelled in tracker
+        // We need to find the download record for this episode
+        let downloads = tracker.get_incomplete_downloads();
+        for download in downloads {
+            if download.episode == episode as i32 {
+                let _ = tracker.mark_cancelled(&download.id);
+                break;
+            }
+        }
+
         Ok(())
     } else {
         Err(format!("Episode {} not found in active downloads", episode))
@@ -613,4 +633,69 @@ fn bundled_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+// Resume download commands
+#[tauri::command]
+pub fn get_incomplete_downloads(
+    tracker: State<'_, DownloadTracker>,
+) -> Result<Vec<DownloadRecord>, String> {
+    Ok(tracker.get_incomplete_downloads())
+}
+
+#[tauri::command]
+pub async fn resume_download(
+    tracker: State<'_, DownloadTracker>,
+    download_id: String,
+    state: State<'_, AppState>,
+    download_state: State<'_, DownloadState>,
+    window: Window,
+) -> Result<(), String> {
+    // Get the download record
+    let record = tracker.get_download(&download_id)
+        .ok_or_else(|| "Download record not found".to_string())?;
+
+    // Remove the old record to allow fresh download with same settings
+    tracker.remove_download(&download_id)?;
+
+    // Prepare download request
+    let req = StartDownloadRequest {
+        anime_slug: record.slug.clone(),
+        anime_name: record.anime_name.clone(),
+        episodes: vec![record.episode as u32],
+        audio_type: record.audio_type.clone(),
+        resolution: record.resolution.clone(),
+        download_dir: std::path::Path::new(&record.file_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string()),
+        host: state.settings.lock().unwrap().host_url.clone(),
+        resume_download_id: None,
+    };
+
+    // Start the download
+    start_download(state, download_state, window, tracker, req).await
+}
+
+#[tauri::command]
+pub fn remove_download_record(
+    tracker: State<'_, DownloadTracker>,
+    download_id: String,
+) -> Result<(), String> {
+    tracker.remove_download(&download_id)
+}
+
+#[tauri::command]
+pub fn clear_completed_downloads(
+    tracker: State<'_, DownloadTracker>,
+) -> Result<(), String> {
+    tracker.clear_completed()
+}
+
+#[tauri::command]
+pub fn validate_download_integrity(
+    tracker: State<'_, DownloadTracker>,
+    download_id: String,
+) -> Result<bool, String> {
+    tracker.validate_file(&download_id)
 }

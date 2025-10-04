@@ -83,3 +83,23 @@ export interface TourContextType {
   goToStep: (step: number) => void;
   skipTour: () => void;
 }
+
+// Resume download types
+export type DownloadStatus = "inprogress" | "completed" | "failed" | "cancelled";
+
+export interface DownloadRecord {
+  id: string;
+  anime_name: string;
+  episode: number;
+  slug: string;
+  status: DownloadStatus;
+  file_path: string;
+  downloaded_bytes: number;
+  file_size: number | null;
+  started_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  error_message: string | null;
+  audio_type: string | null;
+  resolution: string | null;
+}

@@ -6,6 +6,7 @@ import type {
   PreviewItem,
   EpisodeInfo,
   RequirementsCheckResponse,
+  DownloadRecord,
 } from "./types";
 
 export async function loadSettings(): Promise<Settings> {
@@ -59,30 +60,25 @@ export async function previewSources(
 
 export interface StartDownloadRequest {
   animeName: string;
-  slug: string;
-  host: string;
+  animeSlug: string;
+  episodes: number[];
+  audioType?: string;
   resolution?: string;
-  audio?: string;
-  threads: number;
-  listOnly: boolean;
-  episodesSpec?: string;
-  selected: number[];
   downloadDir?: string | null;
+  host: string;
 }
 
 export async function startDownload(req: StartDownloadRequest): Promise<void> {
   await invoke("start_download", {
     req: {
       anime_name: req.animeName,
-      slug: req.slug,
-      host: req.host,
+      anime_slug: req.animeSlug,
+      episodes: req.episodes,
+      audio_type: emptyToNull(req.audioType),
       resolution: emptyToNull(req.resolution),
-      audio: emptyToNull(req.audio),
-      threads: req.threads,
-      list_only: req.listOnly,
-      episodes_spec: emptyToNull(req.episodesSpec),
-      selected: req.selected,
       download_dir: req.downloadDir ?? null,
+      host: req.host,
+      resume_download_id: null,
     },
   });
 }
@@ -134,4 +130,33 @@ function emptyToNull(value?: string): string | null | undefined {
 
 export async function cancelDownload(episode: number): Promise<void> {
   await invoke("cancel_download", { episode });
+}
+
+// Resume download API functions
+export async function getIncompleteDownloads(): Promise<DownloadRecord[]> {
+  return invoke("get_incomplete_downloads");
+}
+
+export async function resumeDownload(downloadId: string): Promise<void> {
+  await invoke("resume_download", { downloadId });
+}
+
+export async function removeDownloadRecord(downloadId: string): Promise<void> {
+  await invoke("remove_download_record", { downloadId });
+}
+
+export async function clearCompletedDownloads(): Promise<void> {
+  await invoke("clear_completed_downloads");
+}
+
+export async function validateDownloadIntegrity(downloadId: string): Promise<boolean> {
+  return invoke("validate_download_integrity", { downloadId });
+}
+
+export async function getAppVersion(): Promise<string> {
+  return invoke("get_app_version");
+}
+
+export async function openPath(path: string): Promise<void> {
+  await invoke("open_path", { path });
 }
