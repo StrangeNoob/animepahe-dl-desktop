@@ -47,6 +47,15 @@ pub struct PreviewItem {
     pub sources: Vec<scrape::Candidate>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct DownloadCompleteNotification {
+    pub anime_name: String,
+    pub episode: u32,
+    pub file_path: String,
+    pub file_size: i64,
+    pub success: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchRequest {
     pub name: String,
@@ -498,9 +507,9 @@ pub async fn start_download(
                     // Mark download as completed in tracker
                     let _ = tracker_clone.mark_completed(&download_id);
 
-                    // Add to library
-                    if let Ok(metadata) = std::fs::metadata(&path) {
-                        let file_size = metadata.len() as i64;
+                    // Add to library and get file size
+                    let file_size = if let Ok(metadata) = std::fs::metadata(&path) {
+                        let size = metadata.len() as i64;
                         let _ = library_clone.add_download(
                             &anime_name,
                             &req.anime_slug,
@@ -508,16 +517,20 @@ pub async fn start_download(
                             req.resolution.as_deref(),
                             req.audio_type.as_deref(),
                             &path.to_string_lossy(),
-                            file_size,
+                            size,
                             None, // thumbnail_url
                             &host,
                         );
-                    }
+                        size
+                    } else {
+                        0
+                    };
 
                     let folder = path
                         .parent()
                         .map(|p| p.to_path_buf())
                         .unwrap_or(path.clone());
+
                     let _ = window.emit(
                         "download-status",
                         StatusPayload {
@@ -526,6 +539,18 @@ pub async fn start_download(
                             path: Some(folder.to_string_lossy().to_string()),
                         },
                     );
+
+                    // Emit download complete notification
+                    let notification = DownloadCompleteNotification {
+                        anime_name: anime_name.clone(),
+                        episode,
+                        file_path: path.to_string_lossy().to_string(),
+                        file_size,
+                        success: true,
+                    };
+                    println!("[NOTIFICATION] Emitting download-complete event for {} Episode {}", anime_name, episode);
+                    println!("[NOTIFICATION] File path: {}", path.to_string_lossy());
+                    let _ = window.emit("download-complete", notification);
                 }
                 Err(err) => {
                     // Mark download as failed in tracker
@@ -537,6 +562,18 @@ pub async fn start_download(
                             episode,
                             status: format!("Failed: {err}"),
                             path: None,
+                        },
+                    );
+
+                    // Emit download failed notification
+                    let _ = window.emit(
+                        "download-failed",
+                        DownloadCompleteNotification {
+                            anime_name: anime_name.clone(),
+                            episode,
+                            file_path: String::new(),
+                            file_size: 0,
+                            success: false,
                         },
                     );
                 }
@@ -825,4 +862,110 @@ pub fn import_library(
 ) -> Result<usize, String> {
     library.import_library(&json)
         .map_err(|e| e.to_string())
+}
+
+// Notification commands
+
+#[tauri::command]
+pub async fn play_notification_sound() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        Command::new("afplay")
+            .arg("/System/Library/Sounds/Glass.aiff")
+            .spawn()
+            .map_err(|e| format!("Failed to play sound: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        Command::new("powershell")
+            .args(&["-c", "[console]::beep(800,200)"])
+            .spawn()
+            .map_err(|e| format!("Failed to play sound: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        Command::new("paplay")
+            .arg("/usr/share/sounds/freedesktop/stereo/complete.oga")
+            .spawn()
+            .ok(); // Don't fail if sound file doesn't exist
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_tray_title(app: AppHandle, title: String) -> Result<(), String> {
+    println!("[TRAY] Attempting to update tray title to: {}", title);
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_tooltip(Some(&title))
+            .map_err(|e| {
+                println!("[TRAY] Failed to update tray: {}", e);
+                format!("Failed to update tray: {}", e)
+            })?;
+        println!("[TRAY] Successfully updated tray title");
+    } else {
+        println!("[TRAY] WARNING: Tray not found!");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_system_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        // Open System Settings > Notifications
+        Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.notifications")
+            .spawn()
+            .map_err(|e| format!("Failed to open system settings: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        // Open Windows Settings > Notifications
+        Command::new("explorer")
+            .arg("ms-settings:notifications")
+            .spawn()
+            .map_err(|e| format!("Failed to open system settings: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        // Try to open GNOME settings for notifications
+        if let Ok(_) = Command::new("gnome-control-center")
+            .arg("notifications")
+            .spawn()
+        {
+            return Ok(());
+        }
+
+        // Fallback: try to open generic settings
+        if let Ok(_) = Command::new("gnome-control-center").spawn() {
+            return Ok(());
+        }
+
+        // If GNOME not available, try KDE
+        if let Ok(_) = Command::new("systemsettings5")
+            .arg("kcm_notifications")
+            .spawn()
+        {
+            return Ok(());
+        }
+
+        // Last resort: try xdg-open with settings
+        Command::new("xdg-open")
+            .arg("settings://notifications")
+            .spawn()
+            .ok();
+    }
+
+    Ok(())
 }

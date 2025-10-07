@@ -212,3 +212,16 @@ export async function exportLibrary(): Promise<string> {
 export async function importLibrary(json: string): Promise<number> {
   return invoke("import_library", { json });
 }
+
+// Notification API functions
+export async function playNotificationSound(): Promise<void> {
+  await invoke("play_notification_sound");
+}
+
+export async function updateTrayTitle(title: string): Promise<void> {
+  await invoke("update_tray_title", { title });
+}
+
+export async function openSystemSettings(): Promise<void> {
+  await invoke("open_system_settings");
+}

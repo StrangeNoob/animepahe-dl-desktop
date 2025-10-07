@@ -137,3 +137,37 @@ export interface LibraryStats {
   total_size: number;
   total_watch_time: number;
 }
+
+// Notification types
+export interface DownloadCompleteNotification {
+  anime_name: string;
+  episode: number;
+  file_path: string;
+  file_size: number;
+  success: boolean;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  soundEnabled: boolean;
+  showInTray: boolean;
+  autoOpenFolder: boolean;
+}
+
+export interface ToastNotification {
+  id: string;
+  type: 'success' | 'error';
+  anime_name: string;
+  episode: number;
+  file_path?: string;
+  file_size?: number;
+}
+
+export interface BatchDownloadState {
+  total: number;
+  completed: number;
+  failed: number;
+  isActive: boolean;
+  startTime: number;
+  currentEpisode?: number;
+}

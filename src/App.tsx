@@ -74,6 +74,10 @@ import { Library as LibraryIcon, Download } from "lucide-react";
 import { LibraryView } from "./components/LibraryView";
 import { DuplicateWarning } from "./components/DuplicateWarning";
 import { useDuplicateDetection } from "./hooks/useDuplicateDetection";
+import { NotificationProvider, useNotificationContext } from "./contexts/NotificationContext";
+import { useDownloadNotifications } from "./hooks/useDownloadNotifications";
+import { NotificationToastContainer } from "./components/NotificationToast";
+import { NotificationSettingsDialog } from "./components/NotificationSettingsDialog";
 
 const defaultSettings: Settings = {
   downloadDir: null,
@@ -350,6 +354,10 @@ function AppContent() {
   // Resume downloads feature
   const { incompleteCount, showNotification, dismissNotification } = useAutoResumeDetection();
   const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
+
+  // Download notifications
+  const { toasts, removeToast } = useDownloadNotifications();
+  const { startBatch } = useNotificationContext();
 
   const availableResolutions = useMemo(() => {
     const values = new Set<string>();
@@ -1081,6 +1089,9 @@ function AppContent() {
 
     const downloadStartTime = Date.now();
 
+    // Start batch tracking for notifications
+    startBatch(selectedEpisodes.length);
+
     // Track download initiation
     posthog?.capture('download_initiated', {
       episode_count: selectedEpisodes.length,
@@ -1184,6 +1195,7 @@ function AppContent() {
                 <RefreshCw className="h-4 w-4" />
                 Resume Downloads
               </Button>
+              <NotificationSettingsDialog />
               <SettingsDropdown
                 settings={settings}
                 onThemeToggle={toggleTheme}
@@ -1702,6 +1714,9 @@ function AppContent() {
         requirements={requirements}
         onRequirementsUpdate={setRequirements}
       />
+
+      {/* Notification Toasts */}
+      <NotificationToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
@@ -1750,9 +1765,11 @@ export default function App() {
       enabled={settings.analyticsEnabled}
       theme={settings.themeDark ? 'dark' : 'light'}
     >
-      <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
-        <AppContent />
-      </TourProvider>
+      <NotificationProvider>
+        <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
+          <AppContent />
+        </TourProvider>
+      </NotificationProvider>
     </PostHogProvider>
   );
 }
