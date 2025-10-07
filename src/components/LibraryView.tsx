@@ -8,12 +8,12 @@ import {
   getAnimeLibrary,
   getLibraryStats,
   searchLibrary,
-  exportLibrary,
-  importLibrary
+  exportLibraryToFile,
+  importLibraryFromFile,
+  migrateLibraryPosters
 } from "../api";
 import { AnimeCard } from "./AnimeCard";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
+import { save, open } from "@tauri-apps/plugin-dialog";
 
 export function LibraryView() {
   const [animeList, setAnimeList] = useState<AnimeStats[]>([]);
@@ -22,7 +22,10 @@ export function LibraryView() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadLibrary();
+    // Migrate posters on first load, then load library
+    migrateLibraryPosters()
+      .catch(err => console.warn("Poster migration failed:", err))
+      .finally(() => loadLibrary());
   }, []);
 
   const loadLibrary = async () => {
@@ -57,7 +60,6 @@ export function LibraryView() {
 
   const handleExport = async () => {
     try {
-      const json = await exportLibrary();
       const filePath = await save({
         filters: [{
           name: "JSON",
@@ -67,31 +69,33 @@ export function LibraryView() {
       });
 
       if (filePath) {
-        await writeTextFile(filePath, json);
-        console.log("Library exported successfully");
+        await exportLibraryToFile(filePath);
+        alert("Library exported successfully!");
       }
     } catch (error) {
       console.error("Export failed:", error);
+      alert(`Export failed: ${error}`);
     }
   };
 
   const handleImport = async () => {
     try {
-      const filePath = await save({
+      const filePath = await open({
         filters: [{
           name: "JSON",
           extensions: ["json"]
-        }]
+        }],
+        multiple: false
       });
 
       if (filePath) {
-        const json = await readTextFile(filePath);
-        const count = await importLibrary(json);
-        console.log(`Imported ${count} entries`);
+        const count = await importLibraryFromFile(filePath as string);
+        alert(`Successfully imported ${count} library entries!`);
         loadLibrary();
       }
     } catch (error) {
       console.error("Import failed:", error);
+      alert(`Import failed: ${error}`);
     }
   };
 

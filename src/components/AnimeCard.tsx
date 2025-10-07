@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardFooter } from "./ui/card";
 import { Button } from "./ui/button";
 import { Play, Trash2, Calendar } from "lucide-react";
 import { AnimeStats } from "../types";
-import { deleteAnimeFromLibrary } from "../api";
+import { deleteAnimeFromLibrary, fetchImageAsBase64 } from "../api";
 import { EpisodeListDialog } from "./EpisodeListDialog";
 
 interface AnimeCardProps {
@@ -15,6 +15,30 @@ interface AnimeCardProps {
 export function AnimeCard({ anime, onDelete, formatSize }: AnimeCardProps) {
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    if (anime.thumbnail_url && !imageError) {
+      setImageLoading(true);
+      fetchImageAsBase64(anime.thumbnail_url)
+        .then((base64Data) => {
+          console.log("Image loaded successfully for:", anime.anime_name);
+          console.log("Base64 data preview:", base64Data.substring(0, 100) + "...");
+          console.log("Base64 data length:", base64Data.length);
+          setImageSrc(base64Data);
+          setImageLoading(false);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch image for", anime.anime_name, ":", err);
+          setImageError(true);
+          setImageLoading(false);
+        });
+    } else if (!anime.thumbnail_url) {
+      setImageLoading(false);
+    }
+  }, [anime.thumbnail_url, imageError, anime.anime_name]);
 
   const handleDelete = async () => {
     if (!confirm(`Delete ${anime.anime_name} from library?`)) return;
@@ -37,10 +61,14 @@ export function AnimeCard({ anime, onDelete, formatSize }: AnimeCardProps) {
   return (
     <>
       <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-        <div className="aspect-video bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-          {anime.thumbnail_url ? (
+        <div className="aspect-[2/3] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative">
+          {imageLoading && anime.thumbnail_url ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : imageSrc && !imageError ? (
             <img
-              src={anime.thumbnail_url}
+              src={imageSrc}
               alt={anime.anime_name}
               className="w-full h-full object-cover"
             />

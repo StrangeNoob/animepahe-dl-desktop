@@ -137,7 +137,7 @@ impl Library {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT slug, anime_name, COUNT(*) as episode_count, SUM(file_size) as total_size,
-             thumbnail_url, MAX(downloaded_at) as last_downloaded
+             MAX(thumbnail_url) as thumbnail_url, MAX(downloaded_at) as last_downloaded
              FROM library
              GROUP BY slug, anime_name
              ORDER BY last_downloaded DESC"
@@ -335,5 +335,14 @@ impl Library {
         }
 
         Ok(imported)
+    }
+
+    pub fn update_poster_path(&self, slug: &str, poster_path: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE library SET thumbnail_url = ?1 WHERE slug = ?2",
+            params![poster_path, slug],
+        )?;
+        Ok(())
     }
 }

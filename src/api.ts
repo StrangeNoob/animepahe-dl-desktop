@@ -213,6 +213,22 @@ export async function importLibrary(json: string): Promise<number> {
   return invoke("import_library", { json });
 }
 
+export async function exportLibraryToFile(filePath: string): Promise<void> {
+  return invoke("export_library_to_file", { filePath });
+}
+
+export async function importLibraryFromFile(filePath: string): Promise<number> {
+  return invoke("import_library_from_file", { filePath });
+}
+
+export async function fetchImageAsBase64(path: string): Promise<string> {
+  return invoke("fetch_image_as_base64", { path });
+}
+
+export async function migrateLibraryPosters(): Promise<void> {
+  return invoke("migrate_library_posters");
+}
+
 // Notification API functions
 export async function playNotificationSound(): Promise<void> {
   await invoke("play_notification_sound");

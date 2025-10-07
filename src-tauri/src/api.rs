@@ -103,6 +103,37 @@ pub async fn resolve_anime_name(
     }
 }
 
+pub async fn fetch_anime_poster(
+    slug: &str,
+    cookie: &str,
+    host: &str,
+) -> Result<Option<String>> {
+    let client = client();
+    let base = host.trim_end_matches('/');
+    let url = format!("{}/anime/{}", base, slug);
+    let html = client
+        .get(url)
+        .header(reqwest::header::COOKIE, cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let document = scraper::Html::parse_document(&html);
+
+    // Try to find poster image - Animepahe uses div.anime-poster > a > img
+    if let Some(img) = document
+        .select(&scraper::Selector::parse("div.anime-poster img, div.anime-poster a img").unwrap())
+        .next()
+    {
+        if let Some(src) = img.value().attr("data-src").or_else(|| img.value().attr("src")) {
+            return Ok(Some(src.to_string()));
+        }
+    }
+
+    Ok(None)
+}
+
 
 pub async fn find_session_for_episode(
     slug: &str,

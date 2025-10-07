@@ -104,6 +104,10 @@ fn main() {
             commands::search_library,
             commands::export_library,
             commands::import_library,
+            commands::export_library_to_file,
+            commands::import_library_from_file,
+            commands::migrate_library_posters,
+            commands::fetch_image_as_base64,
             commands::play_notification_sound,
             commands::update_tray_title,
             commands::open_system_settings

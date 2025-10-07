@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
+use std::io::Write;
 
 use tokio::time::{sleep, Duration};
 use tokio::sync::Mutex as TokioMutex;
@@ -8,6 +9,7 @@ use tokio::sync::Mutex as TokioMutex;
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
 use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager, State, Window};
+use base64::Engine;
 
 use crate::{
     api, download, scrape,
@@ -274,6 +276,21 @@ pub async fn start_download(
             return;
         }
 
+        // Fetch and save anime poster locally
+        let poster_path = match api::fetch_anime_poster(&req.anime_slug, &cookie, &host).await {
+            Ok(Some(url)) => {
+                // Download and save the poster image
+                match download_and_save_poster(&url, &req.anime_slug, &cookie, &host).await {
+                    Ok(path) => Some(path),
+                    Err(e) => {
+                        eprintln!("Failed to download poster: {}", e);
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+
         for episode in episodes {
             let _ = window.emit(
                 "download-status",
@@ -518,7 +535,7 @@ pub async fn start_download(
                             req.audio_type.as_deref(),
                             &path.to_string_lossy(),
                             size,
-                            None, // thumbnail_url
+                            poster_path.as_deref(),
                             &host,
                         );
                         size
@@ -862,6 +879,140 @@ pub fn import_library(
 ) -> Result<usize, String> {
     library.import_library(&json)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_library_to_file(
+    library: State<'_, crate::library::Library>,
+    file_path: String,
+) -> Result<(), String> {
+    let json = library.export_library()
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&file_path, json)
+        .map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[tauri::command]
+pub fn import_library_from_file(
+    library: State<'_, crate::library::Library>,
+    file_path: String,
+) -> Result<usize, String> {
+    let json = std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    library.import_library(&json)
+        .map_err(|e| e.to_string())
+}
+
+async fn download_and_save_poster(
+    url: &str,
+    slug: &str,
+    cookie: &str,
+    host: &str,
+) -> Result<String, String> {
+    // Create posters directory in config
+    let config_dir = dirs::config_dir()
+        .ok_or("Failed to get config directory")?
+        .join("animepahe-dl")
+        .join("posters");
+
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create posters directory: {}", e))?;
+
+    // Extract filename from URL
+    let filename = url
+        .split('/')
+        .last()
+        .ok_or("Invalid URL")?;
+
+    let poster_path = config_dir.join(filename);
+
+    // Skip if already exists
+    if poster_path.exists() {
+        return Ok(poster_path.to_string_lossy().to_string());
+    }
+
+    // Download the image
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .header("Referer", format!("{}/anime/{}", host.trim_end_matches('/'), slug))
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .header("Cookie", cookie)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch poster: {}", e))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read poster bytes: {}", e))?;
+
+    // Save to file
+    let mut file = std::fs::File::create(&poster_path)
+        .map_err(|e| format!("Failed to create poster file: {}", e))?;
+
+    file.write_all(&bytes)
+        .map_err(|e| format!("Failed to write poster file: {}", e))?;
+
+    Ok(poster_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn migrate_library_posters(
+    library: State<'_, crate::library::Library>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let host = {
+        let settings = state.settings.lock().unwrap();
+        settings.host_url.clone()
+    };
+    let cookie = ""; // No cookie needed for poster migration
+
+    // Get all anime from library
+    let anime_list = library.get_anime_library()
+        .map_err(|e| e.to_string())?;
+
+    for anime in anime_list {
+        // Skip if already has local path
+        if let Some(ref url) = anime.thumbnail_url {
+            if url.starts_with("/") || url.starts_with("~") {
+                continue; // Already local path
+            }
+
+            // Download and save poster
+            if let Ok(local_path) = download_and_save_poster(url, &anime.slug, cookie, &host).await {
+                // Update all episodes with this anime
+                let _ = library.update_poster_path(&anime.slug, &local_path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_image_as_base64(path: String) -> Result<String, String> {
+    // Read image from local filesystem
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read image file: {}", e))?;
+
+    // Convert to base64
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    // Detect content type from file extension
+    let content_type = if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".webp") {
+        "image/webp"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else {
+        "image/jpeg" // default
+    };
+
+    Ok(format!("data:{};base64,{}", content_type, base64))
 }
 
 // Notification commands
