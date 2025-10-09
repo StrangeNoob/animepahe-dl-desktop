@@ -103,48 +103,37 @@ pub async fn resolve_anime_name(
     }
 }
 
-pub async fn expand_episode_spec(
-    spec: &str,
+pub async fn fetch_anime_poster(
     slug: &str,
     cookie: &str,
     host: &str,
-) -> Result<Vec<u32>> {
-    let mut episodes: Vec<u32> = vec![];
-    let parts: Vec<&str> = spec
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if parts.is_empty() {
-        return Ok(episodes);
-    }
-    // If contains '*', expand to full range from available episodes
-    if parts.iter().any(|p| p.contains('*')) {
-        let eps = fetch_all_episodes(slug, cookie, host).await?;
-        let mut nums: Vec<u32> = eps
-            .iter()
-            .filter_map(|e| e.episode.as_u64().map(|v| v as u32))
-            .collect();
-        nums.sort_unstable();
-        nums.dedup();
-        return Ok(nums);
-    }
-    for p in parts {
-        if let Some((a, b)) = p.split_once('-') {
-            let start: u32 = a.parse().context("parse range start")?;
-            let end: u32 = b.parse().context("parse range end")?;
-            for n in start..=end {
-                episodes.push(n);
-            }
-        } else {
-            let n: u32 = p.parse().context("parse episode number")?;
-            episodes.push(n);
+) -> Result<Option<String>> {
+    let client = client();
+    let base = host.trim_end_matches('/');
+    let url = format!("{}/anime/{}", base, slug);
+    let html = client
+        .get(url)
+        .header(reqwest::header::COOKIE, cookie)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let document = scraper::Html::parse_document(&html);
+
+    // Try to find poster image - Animepahe uses div.anime-poster > a > img
+    if let Some(img) = document
+        .select(&scraper::Selector::parse("div.anime-poster img, div.anime-poster a img").unwrap())
+        .next()
+    {
+        if let Some(src) = img.value().attr("data-src").or_else(|| img.value().attr("src")) {
+            return Ok(Some(src.to_string()));
         }
     }
-    episodes.sort_unstable();
-    episodes.dedup();
-    Ok(episodes)
+
+    Ok(None)
 }
+
 
 pub async fn find_session_for_episode(
     slug: &str,

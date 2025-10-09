@@ -56,6 +56,7 @@ import {
   Sparkles,
   HelpCircle,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { Autocomplete, type AutocompleteOption } from "./components/ui/autocomplete";
 import { RequirementsDialog } from "./components/RequirementsDialog";
@@ -65,6 +66,18 @@ import { PostHogProvider } from "./lib/posthog";
 import { usePostHog } from "posthog-js/react";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { SettingsDropdown } from "./components/SettingsDropdown";
+import { ResumeDownloadsDialog } from "./components/ResumeDownloadsDialog";
+import { ResumeNotificationBanner } from "./components/ResumeNotificationBanner";
+import { useAutoResumeDetection } from "./hooks/useAutoResumeDetection";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
+import { Library as LibraryIcon, Download } from "lucide-react";
+import { LibraryView } from "./components/LibraryView";
+import { DuplicateWarning } from "./components/DuplicateWarning";
+import { useDuplicateDetection } from "./hooks/useDuplicateDetection";
+import { NotificationProvider, useNotificationContext } from "./contexts/NotificationContext";
+import { useDownloadNotifications } from "./hooks/useDownloadNotifications";
+import { NotificationToastContainer } from "./components/NotificationToast";
+import { NotificationSettingsDialog } from "./components/NotificationSettingsDialog";
 
 const defaultSettings: Settings = {
   downloadDir: null,
@@ -313,6 +326,15 @@ function AppContent() {
   const [episodeSummaryLoading, setEpisodeSummaryLoading] = useState(false);
   const [episodeSummaryError, setEpisodeSummaryError] = useState<string | null>(null);
   const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
+
+  // Library tab state
+  const [activeTab, setActiveTab] = useState("download");
+
+  // Duplicate detection
+  const { duplicates, isLoading: duplicatesLoading } = useDuplicateDetection(
+    slug || null,
+    selectedEpisodes
+  );
   const [previewData, setPreviewData] = useState<PreviewItem[] | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewCache, setPreviewCache] = useState<Record<number, PreviewItem>>({});
@@ -328,6 +350,14 @@ function AppContent() {
   const summaryRequestId = useRef(0);
   const specUpdateSource = useRef<"input" | "selection" | null>(null);
   const downloadStartTimes = useRef<Record<number, number>>({});
+
+  // Resume downloads feature
+  const { incompleteCount, showNotification, dismissNotification } = useAutoResumeDetection();
+  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
+
+  // Download notifications
+  const { toasts, removeToast } = useDownloadNotifications();
+  const { startBatch } = useNotificationContext();
 
   const availableResolutions = useMemo(() => {
     const values = new Set<string>();
@@ -946,6 +976,71 @@ function AppContent() {
     }
   };
 
+  const handleRetryDownload = async (episode: number) => {
+    if (slugMissing) {
+      setError("Select an anime before retrying download.");
+      return;
+    }
+
+    setError(null);
+
+    // Clear the failed status for this episode
+    setStatusMap((prev) => {
+      const next = { ...prev };
+      delete next[episode];
+      return next;
+    });
+
+    // Track retry event
+    posthog?.capture('download_retry', {
+      episode,
+      resolution: resolution || 'any',
+      audio: audio || 'any'
+    });
+
+    try {
+      await startDownload({
+        animeName: selectedAnime?.title ?? searchQuery,
+        animeSlug: slug,
+        episodes: [episode], // Only retry this specific episode
+        audioType: audio,
+        resolution,
+        downloadDir: settings.downloadDir,
+        host: settings.hostUrl,
+      });
+
+      // Record download start time
+      downloadStartTimes.current[episode] = Date.now();
+    } catch (err) {
+      console.error(err);
+      const errorMessage = String(err);
+      setError(`Failed to retry episode ${episode}: ${errorMessage}`);
+
+      // Track retry error
+      posthog?.capture('download_retry_error', {
+        episode,
+        error_type: errorMessage.includes('network') ? 'network_error' : 'unknown_error'
+      });
+    }
+  };
+
+  const handleRemoveDuplicates = () => {
+    const duplicateEpisodes = new Set(duplicates.map(d => d.episode));
+    const filtered = selectedEpisodes.filter(ep => !duplicateEpisodes.has(ep));
+    setSelectedEpisodes(filtered);
+
+    // Update the spec to reflect the filtered episodes
+    if (filtered.length === 0) {
+      setEpisodesSpec("");
+    } else {
+      setEpisodesSpec(filtered.join(","));
+    }
+  };
+
+  const handleViewLibrary = () => {
+    setActiveTab("library");
+  };
+
   const toggleTheme = async (dark: boolean) => {
     const next = { ...settings, themeDark: dark };
     setSettings(next);
@@ -994,6 +1089,9 @@ function AppContent() {
 
     const downloadStartTime = Date.now();
 
+    // Start batch tracking for notifications
+    startBatch(selectedEpisodes.length);
+
     // Track download initiation
     posthog?.capture('download_initiated', {
       episode_count: selectedEpisodes.length,
@@ -1006,15 +1104,12 @@ function AppContent() {
     try {
       await startDownload({
         animeName: selectedAnime?.title ?? searchQuery,
-        slug,
-        host: settings.hostUrl,
+        animeSlug: slug,
+        episodes: selectedEpisodes,
+        audioType: audio,
         resolution,
-        audio,
-        threads,
-        listOnly,
-        episodesSpec: episodesSpec.trim() || undefined,
-        selected: selectedEpisodes,
         downloadDir: settings.downloadDir,
+        host: settings.hostUrl,
       });
 
       // Record download start time for each episode for performance tracking
@@ -1062,6 +1157,21 @@ function AppContent() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground transition-colors">
+      {/* Resume downloads notification banner */}
+      {showNotification && incompleteCount > 0 && (
+        <ResumeNotificationBanner
+          count={incompleteCount}
+          onResume={() => setResumeDialogOpen(true)}
+          onDismiss={dismissNotification}
+        />
+      )}
+
+      {/* Resume downloads dialog */}
+      <ResumeDownloadsDialog
+        open={resumeDialogOpen}
+        onOpenChange={setResumeDialogOpen}
+      />
+
       <div className="pointer-events-none absolute -left-20 top-10 h-64 w-64 rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-cyan-400/30 blur-3xl" />
       <div className="pointer-events-none absolute right-10 bottom-10 h-72 w-72 rounded-full bg-gradient-to-br from-cyan-400/30 via-purple-500/25 to-transparent blur-3xl" />
       <div className="pointer-events-none absolute right-16 top-16 text-5xl opacity-70 animate-pulse">🌸</div>
@@ -1076,6 +1186,16 @@ function AppContent() {
               <p className="text-sm text-muted-foreground">Search, preview, and download anime with neon flair.</p>
             </div>
             <div className="flex items-center gap-2" data-tour="settings-section">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResumeDialogOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Resume Downloads
+              </Button>
+              <NotificationSettingsDialog />
               <SettingsDropdown
                 settings={settings}
                 onThemeToggle={toggleTheme}
@@ -1138,14 +1258,36 @@ function AppContent() {
           </DialogContent>
         </Dialog>
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-1 glass-card overflow-visible">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <SearchIcon className="h-5 w-5 text-primary" />
-                Search & Filters
-              </CardTitle>
-            </CardHeader>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+            <TabsTrigger value="download" className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              Download
+            </TabsTrigger>
+            <TabsTrigger value="library" className="flex items-center gap-2">
+              <LibraryIcon className="h-4 w-4" />
+              Library
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="download" className="mt-0">
+            {/* Duplicate Warning */}
+            {duplicates.length > 0 && (
+              <DuplicateWarning
+                duplicates={duplicates}
+                onRemoveDuplicates={handleRemoveDuplicates}
+                onViewLibrary={handleViewLibrary}
+              />
+            )}
+
+            <div className="grid gap-6 xl:grid-cols-3">
+              <Card className="xl:col-span-1 glass-card overflow-visible">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <SearchIcon className="h-5 w-5 text-primary" />
+                    Search & Filters
+                  </CardTitle>
+                </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 <label className="text-sm text-muted-foreground">Anime</label>
@@ -1202,7 +1344,7 @@ function AppContent() {
                 )}
               </div>
               <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
-                <div className="space-y-1">
+                <div className="space-y-1 truncate">
                   <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
                   <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
                     <SelectTrigger>
@@ -1234,7 +1376,7 @@ function AppContent() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground h-5 flex items-center">Audio</label>
+                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center">Audio</label>
                   <Select
                     value={audio || "any"}
                     onValueChange={(value) => setAudio(value === "any" ? "" : value)}
@@ -1255,7 +1397,7 @@ function AppContent() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground h-5 flex items-center gap-1">
+                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center gap-1">
                     Threads
                     <div className="relative group">
                       <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />
@@ -1429,15 +1571,24 @@ function AppContent() {
                       const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
                       const downloadPath = downloadPaths[Number(episode)];
                       const isActive = isActiveStatus(status);
+                      const isFailed = status.toLowerCase().startsWith('failed');
                       const speed = progress?.speedBps ?? 0;
                       const elapsedSeconds = progress?.elapsedSeconds ?? 0;
+
+                      // Check if any downloads are still active
+                      const hasActiveDownloads = Object.values(statusMap).some(s => isActiveStatus(s));
+
+                      // Extract error message from status if failed
+                      const errorMessage = isFailed ? status.replace(/^failed:\s*/i, '').trim() : null;
 
                       return (
                         <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">Episode {episode}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">{status}</span>
+                              <span className={isFailed ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                {isFailed ? "Failed" : status}
+                              </span>
                               {isActive && (
                                 <Button
                                   variant="ghost"
@@ -1447,6 +1598,18 @@ function AppContent() {
                                   title="Cancel download"
                                 >
                                   <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {isFailed && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRetryDownload(Number(episode))}
+                                  disabled={hasActiveDownloads}
+                                  aria-label="Retry download"
+                                  title={hasActiveDownloads ? "Will be available after whole download is complete" : "Retry download"}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
                                 </Button>
                               )}
                               <Button
@@ -1460,6 +1623,11 @@ function AppContent() {
                               </Button>
                             </div>
                           </div>
+                          {errorMessage && (
+                            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2">
+                              <p className="text-xs text-destructive/90 break-words">{errorMessage}</p>
+                            </div>
+                          )}
                           {progress && progress.total > 0 && (
                             <>
                               <Progress value={value} />
@@ -1485,6 +1653,12 @@ function AppContent() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="library" className="mt-0">
+            <LibraryView />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -1540,6 +1714,9 @@ function AppContent() {
         requirements={requirements}
         onRequirementsUpdate={setRequirements}
       />
+
+      {/* Notification Toasts */}
+      <NotificationToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
@@ -1588,9 +1765,11 @@ export default function App() {
       enabled={settings.analyticsEnabled}
       theme={settings.themeDark ? 'dark' : 'light'}
     >
-      <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
-        <AppContent />
-      </TourProvider>
+      <NotificationProvider>
+        <TourProvider settings={settings} onSettingsUpdate={handleSettingsUpdate}>
+          <AppContent />
+        </TourProvider>
+      </NotificationProvider>
     </PostHogProvider>
   );
 }
