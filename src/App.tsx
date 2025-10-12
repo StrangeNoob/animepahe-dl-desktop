@@ -85,6 +85,7 @@ const defaultSettings: Settings = {
   hostUrl: "https://animepahe.si",
   tourCompleted: false,
   analyticsEnabled: true,
+  maxThreads: 8,
 };
 
 const RESOLUTION_PRESETS = ["1080", "720", "480", "360", "240"] as const;
@@ -317,7 +318,7 @@ function AppContent() {
   const [resolutionChoice, setResolutionChoice] = useState("any");
   const [customResolution, setCustomResolution] = useState("");
   const [audio, setAudio] = useState("");
-  const [threads, setThreads] = useState(10);
+  const [threads, setThreads] = useState(settings.maxThreads);
   const [listOnly] = useState(false);
 
   const [episodes, setEpisodes] = useState<FetchEpisodesResponse | null>(null);
@@ -392,6 +393,7 @@ function AppContent() {
         // Load settings
         const loadedSettings = await loadSettings();
         setSettings(loadedSettings);
+        setThreads(loadedSettings.maxThreads);
 
         // Load app version from Tauri backend
         const version = await invoke<string>('get_app_version');
@@ -1007,6 +1009,7 @@ function AppContent() {
         resolution,
         downloadDir: settings.downloadDir,
         host: settings.hostUrl,
+        threads: threads,
       });
 
       // Record download start time
@@ -1110,6 +1113,7 @@ function AppContent() {
         resolution,
         downloadDir: settings.downloadDir,
         host: settings.hostUrl,
+        threads: threads,
       });
 
       // Record download start time for each episode for performance tracking
@@ -1288,371 +1292,371 @@ function AppContent() {
                     Search & Filters
                   </CardTitle>
                 </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-sm text-muted-foreground">Anime</label>
-                <div data-tour="search-input">
-                  <Autocomplete
-                    value={selectedAnime?.session ?? null}
-                    onChange={(option) => {
-                      if (!option) {
-                        handleSearchInput("", "input");
-                        setSelectedAnime(null);
-                        setSlug("");
-                        return;
-                      }
-                      const match = searchResults.find((item) => item.session === option.value);
-                      if (match) {
-                        handleSearchInput(match.title, "selection");
-                        handleSelectAnime(match);
-                      } else {
-                        handleSearchInput(option.label, "selection");
-                        handleSelectAnime({ session: option.value, title: option.label });
-                      }
-                    }}
-                    query={searchQuery}
-                    onQueryChange={(value) => handleSearchInput(value, "input")}
-                    items={autocompleteItems}
-                    isLoading={searchLoading}
-                  />
-                </div>
-                {selectedAnime ? (
-                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">chibi ✓</span>
-                    <span>
-                      Slug: <code className="rounded bg-muted px-1 py-0.5">{selectedAnime.session}</code>
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Select an anime to enable downloads.</p>
-                )}
-              </div>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-sm text-muted-foreground">Anime</label>
+                    <div data-tour="search-input">
+                      <Autocomplete
+                        value={selectedAnime?.session ?? null}
+                        onChange={(option) => {
+                          if (!option) {
+                            handleSearchInput("", "input");
+                            setSelectedAnime(null);
+                            setSlug("");
+                            return;
+                          }
+                          const match = searchResults.find((item) => item.session === option.value);
+                          if (match) {
+                            handleSearchInput(match.title, "selection");
+                            handleSelectAnime(match);
+                          } else {
+                            handleSearchInput(option.label, "selection");
+                            handleSelectAnime({ session: option.value, title: option.label });
+                          }
+                        }}
+                        query={searchQuery}
+                        onQueryChange={(value) => handleSearchInput(value, "input")}
+                        items={autocompleteItems}
+                        isLoading={searchLoading}
+                      />
+                    </div>
+                    {selectedAnime ? (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">chibi ✓</span>
+                        <span>
+                          Slug: <code className="rounded bg-muted px-1 py-0.5">{selectedAnime.session}</code>
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Select an anime to enable downloads.</p>
+                    )}
+                  </div>
 
-              <div className="space-y-1">
-                <label className="text-sm text-muted-foreground">Episodes (type or select)</label>
-                <Input
-                  value={episodesSpec}
-                  onChange={(e) => handleEpisodesSpecChange(e.target.value)}
-                  placeholder="1,3-5,*"
-                />
-                {episodesSpecError ? (
-                  <p className="text-xs text-destructive">{episodesSpecError}</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Patterns like <code>1,3-5</code> or <code>*</code> stay in sync with the grid below.
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
-                <div className="space-y-1 truncate">
-                  <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
-                  <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Highest available" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="any">Highest available</SelectItem>
-                        {availableResolutions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {formatResolutionLabel(option)}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="custom">Custom…</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {resolutionChoice === "custom" && (
+                  <div className="space-y-1">
+                    <label className="text-sm text-muted-foreground">Episodes (type or select)</label>
                     <Input
-                      value={customResolution}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/[^0-9]/g, "");
-                        setCustomResolution(value);
-                        setResolution(value);
-                      }}
-                      placeholder="Enter resolution (e.g. 810)"
-                      inputMode="numeric"
+                      value={episodesSpec}
+                      onChange={(e) => handleEpisodesSpecChange(e.target.value)}
+                      placeholder="1,3-5,*"
+                    />
+                    {episodesSpecError ? (
+                      <p className="text-xs text-destructive">{episodesSpecError}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Patterns like <code>1,3-5</code> or <code>*</code> stay in sync with the grid below.
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3" data-tour="filters-section">
+                    <div className="space-y-1 truncate">
+                      <label className="text-xs text-muted-foreground h-5 flex items-center">Resolution</label>
+                      <Select value={resolutionChoice} onValueChange={handleResolutionSelect}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Highest available" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="any">Highest available</SelectItem>
+                            {availableResolutions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {formatResolutionLabel(option)}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="custom">Custom…</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {resolutionChoice === "custom" && (
+                        <Input
+                          value={customResolution}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9]/g, "");
+                            setCustomResolution(value);
+                            setResolution(value);
+                          }}
+                          placeholder="Enter resolution (e.g. 810)"
+                          inputMode="numeric"
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs truncate text-muted-foreground h-5 flex items-center">Audio</label>
+                      <Select
+                        value={audio || "any"}
+                        onValueChange={(value) => setAudio(value === "any" ? "" : value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Any audio" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="any">Any audio</SelectItem>
+                            {availableAudios.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {formatAudioLabel(option)}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs truncate text-muted-foreground h-5 flex items-center gap-1">
+                        Threads
+                        <div className="relative group">
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />
+                          <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999] pointer-events-none w-80 max-w-[90vw] text-left leading-snug">
+                            Controls how many video segments download in parallel. Higher values can finish episodes faster on fast connections but consume more bandwidth and CPU.
+                            <div className="absolute top-full right-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </label>
+                      <Input
+                        type="number"
+                        min={2}
+                        max={64}
+                        value={threads}
+                        onChange={(e) =>
+                          setThreads(Math.min(64, Math.max(2, Number(e.target.value) || 2)))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1" data-tour="output-folder">
+                    <label className="text-sm text-muted-foreground">Output folder</label>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 truncate rounded-md border border-border/60 bg-background/60 px-3 py-2">
+                        {settings.downloadDir ?? "(project folder)"}
+                      </span>
+                      <Button variant="outline" size="sm" onClick={handleChooseDir}>
+                        Choose
+                      </Button>
+                      {settings.downloadDir && (
+                        <Button variant="ghost" size="sm" onClick={handleClearDir}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      variant="default"
+                      onClick={handleDownload}
+                      disabled={slugMissing || isBusy}
+                      data-tour="download-button"
+                    >
+                      Download
+                    </Button>
+                  </div>
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                </CardContent>
+              </Card>
+
+              <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="episodes-section">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <MonitorPlay className="h-5 w-5 text-cyan-300" />
+                    Episodes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex h-full flex-col gap-3">
+                  {episodeSummaryError && (
+                    <p className="text-xs text-destructive">
+                      Failed to fetch source details: {episodeSummaryError}
+                    </p>
+                  )}
+                  {episodes ? (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                        <span>Fetched: {episodes.episodes.length}</span>
+                        {episodesLoading && (
+                          <span className="flex items-center gap-1 text-xs">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Refreshing…
+                          </span>
+                        )}
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                            Select all
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={handleClearSelection}>
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="grid grid-cols-1 gap-2 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
+                          {episodes.episodes.map((ep) => {
+                            const checked = selectedEpisodes.includes(ep.number);
+                            const summary = episodeSummaries[ep.number];
+                            const preview = previewCache[ep.number];
+                            const showSpinner = episodeSummaryLoading && !preview;
+                            const resolutionText = summary?.resolutions.length
+                              ? summary.resolutions.map((value) => formatResolutionLabel(value)).join(" / ")
+                              : "—";
+                            const audioText = summary?.audios.length
+                              ? summary.audios.map((value) => formatAudioLabel(value)).join(", ")
+                              : "—";
+
+                            return (
+                              <label
+                                key={ep.number}
+                                className={cn(
+                                  "flex items-center gap-3 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm",
+                                  checked && "border-primary/80"
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 rounded border-border accent-primary"
+                                  checked={checked}
+                                  onChange={() => handleToggleEpisode(ep.number)}
+                                />
+                                <div className="flex w-full items-center justify-between gap-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-tight">
+                                    <span className="font-medium">E{ep.number}</span>
+                                    {showSpinner ? (
+                                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Checking sources…
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Audio: {audioText}</span>
+                                    )}
+                                    {!showSpinner && summary?.message && (
+                                      <span className="text-xs text-destructive sm:ml-2">{summary.message}</span>
+                                    )}
+                                  </div>
+                                  {!showSpinner && (
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">Res: {resolutionText}</span>
+                                  )}
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : episodesLoading ? (
+                    <EmptyState
+                      icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
+                      title="Loading episodes"
+                      message="Hang tight while we grab the latest list."
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
+                      title="No episodes yet"
+                      message="Select an anime to load episodes."
                     />
                   )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center">Audio</label>
-                  <Select
-                    value={audio || "any"}
-                    onValueChange={(value) => setAudio(value === "any" ? "" : value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any audio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="any">Any audio</SelectItem>
-                        {availableAudios.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {formatAudioLabel(option)}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs truncate text-muted-foreground h-5 flex items-center gap-1">
-                    Threads
-                    <div className="relative group">
-                      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 cursor-help" />
-                      <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999] pointer-events-none w-80 max-w-[90vw] text-left leading-snug">
-                        Controls how many video segments download in parallel. Higher values can finish episodes faster on fast connections but consume more bandwidth and CPU.
-                        <div className="absolute top-full right-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                      </div>
-                    </div>
-                  </label>
-                  <Input
-                    type="number"
-                    min={2}
-                    max={64}
-                    value={threads}
-                    onChange={(e) =>
-                      setThreads(Math.min(64, Math.max(2, Number(e.target.value) || 2)))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="space-y-1" data-tour="output-folder">
-                <label className="text-sm text-muted-foreground">Output folder</label>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 truncate rounded-md border border-border/60 bg-background/60 px-3 py-2">
-                    {settings.downloadDir ?? "(project folder)"}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={handleChooseDir}>
-                    Choose
-                  </Button>
-                  {settings.downloadDir && (
-                    <Button variant="ghost" size="sm" onClick={handleClearDir}>
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <Button
-                  variant="default"
-                  onClick={handleDownload}
-                  disabled={slugMissing || isBusy}
-                  data-tour="download-button"
-                >
-                  Download
-                </Button>
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
 
-          <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="episodes-section">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <MonitorPlay className="h-5 w-5 text-cyan-300" />
-                Episodes
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex h-full flex-col gap-3">
-              {episodeSummaryError && (
-                <p className="text-xs text-destructive">
-                  Failed to fetch source details: {episodeSummaryError}
-                </p>
-              )}
-              {episodes ? (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                    <span>Fetched: {episodes.episodes.length}</span>
-                    {episodesLoading && (
-                      <span className="flex items-center gap-1 text-xs">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Refreshing…
-                      </span>
-                    )}
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                        Select all
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={handleClearSelection}>
-                        Clear
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="grid grid-cols-1 gap-2 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
-                      {episodes.episodes.map((ep) => {
-                        const checked = selectedEpisodes.includes(ep.number);
-                        const summary = episodeSummaries[ep.number];
-                        const preview = previewCache[ep.number];
-                        const showSpinner = episodeSummaryLoading && !preview;
-                        const resolutionText = summary?.resolutions.length
-                          ? summary.resolutions.map((value) => formatResolutionLabel(value)).join(" / ")
-                          : "—";
-                        const audioText = summary?.audios.length
-                          ? summary.audios.map((value) => formatAudioLabel(value)).join(", ")
-                          : "—";
+              <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="download-status">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <DownloadCloud className="h-5 w-5 text-pink-400" />
+                    Download status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {Object.keys(statusMap).length === 0 ? (
+                    <EmptyState
+                      icon={<DownloadCloud className="h-8 w-8 text-pink-400" />}
+                      title="No downloads yet"
+                      message="Start a download to see detailed progress here."
+                    />
+                  ) : (
+                    <ul className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
+                      {Object.entries(statusMap)
+                        .sort((a, b) => Number(a[0]) - Number(b[0]))
+                        .map(([episode, status]) => {
+                          const progress = progressMap[Number(episode)];
+                          const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
+                          const downloadPath = downloadPaths[Number(episode)];
+                          const isActive = isActiveStatus(status);
+                          const isFailed = status.toLowerCase().startsWith('failed');
+                          const speed = progress?.speedBps ?? 0;
+                          const elapsedSeconds = progress?.elapsedSeconds ?? 0;
 
-                        return (
-                          <label
-                            key={ep.number}
-                            className={cn(
-                              "flex items-center gap-3 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm",
-                              checked && "border-primary/80"
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-border accent-primary"
-                              checked={checked}
-                              onChange={() => handleToggleEpisode(ep.number)}
-                            />
-                            <div className="flex w-full items-center justify-between gap-3">
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-tight">
-                                <span className="font-medium">E{ep.number}</span>
-                                {showSpinner ? (
-                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    Checking sources…
+                          // Check if any downloads are still active
+                          const hasActiveDownloads = Object.values(statusMap).some(s => isActiveStatus(s));
+
+                          // Extract error message from status if failed
+                          const errorMessage = isFailed ? status.replace(/^failed:\s*/i, '').trim() : null;
+
+                          return (
+                            <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-semibold">Episode {episode}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className={isFailed ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                    {isFailed ? "Failed" : status}
                                   </span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">Audio: {audioText}</span>
-                                )}
-                                {!showSpinner && summary?.message && (
-                                  <span className="text-xs text-destructive sm:ml-2">{summary.message}</span>
-                                )}
+                                  {isActive && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleCancelDownload(Number(episode))}
+                                      aria-label="Cancel download"
+                                      title="Cancel download"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {isFailed && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRetryDownload(Number(episode))}
+                                      disabled={hasActiveDownloads}
+                                      aria-label="Retry download"
+                                      title={hasActiveDownloads ? "Will be available after whole download is complete" : "Retry download"}
+                                    >
+                                      <RefreshCw className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenDownload(downloadPath)}
+                                    disabled={!downloadPath}
+                                    aria-label="Open download folder"
+                                  >
+                                    <FolderOpen className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </div>
-                              {!showSpinner && (
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">Res: {resolutionText}</span>
-                              )}
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
-              ) : episodesLoading ? (
-                <EmptyState
-                  icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
-                  title="Loading episodes"
-                  message="Hang tight while we grab the latest list."
-                />
-              ) : (
-                <EmptyState
-                  icon={<MonitorPlay className="h-8 w-8 text-cyan-300" />}
-                  title="No episodes yet"
-                  message="Select an anime to load episodes."
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="xl:col-span-1 glass-card overflow-visible" data-tour="download-status">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <DownloadCloud className="h-5 w-5 text-pink-400" />
-                Download status
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {Object.keys(statusMap).length === 0 ? (
-                <EmptyState
-                  icon={<DownloadCloud className="h-8 w-8 text-pink-400" />}
-                  title="No downloads yet"
-                  message="Start a download to see detailed progress here."
-                />
-              ) : (
-                <ul className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: "65vh" }}>
-                  {Object.entries(statusMap)
-                    .sort((a, b) => Number(a[0]) - Number(b[0]))
-                    .map(([episode, status]) => {
-                      const progress = progressMap[Number(episode)];
-                      const value = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
-                      const downloadPath = downloadPaths[Number(episode)];
-                      const isActive = isActiveStatus(status);
-                      const isFailed = status.toLowerCase().startsWith('failed');
-                      const speed = progress?.speedBps ?? 0;
-                      const elapsedSeconds = progress?.elapsedSeconds ?? 0;
-
-                      // Check if any downloads are still active
-                      const hasActiveDownloads = Object.values(statusMap).some(s => isActiveStatus(s));
-
-                      // Extract error message from status if failed
-                      const errorMessage = isFailed ? status.replace(/^failed:\s*/i, '').trim() : null;
-
-                      return (
-                        <li key={episode} className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-semibold">Episode {episode}</span>
-                            <div className="flex items-center gap-2">
-                              <span className={isFailed ? "text-destructive font-medium" : "text-muted-foreground"}>
-                                {isFailed ? "Failed" : status}
-                              </span>
-                              {isActive && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleCancelDownload(Number(episode))}
-                                  aria-label="Cancel download"
-                                  title="Cancel download"
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                              {isFailed && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleRetryDownload(Number(episode))}
-                                  disabled={hasActiveDownloads}
-                                  aria-label="Retry download"
-                                  title={hasActiveDownloads ? "Will be available after whole download is complete" : "Retry download"}
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleOpenDownload(downloadPath)}
-                                disabled={!downloadPath}
-                                aria-label="Open download folder"
-                              >
-                                <FolderOpen className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                          {errorMessage && (
-                            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2">
-                              <p className="text-xs text-destructive/90 break-words">{errorMessage}</p>
-                            </div>
-                          )}
-                          {progress && progress.total > 0 && (
-                            <>
-                              <Progress value={value} />
-                              {isActive && (
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-xs text-muted-foreground">
-                                    <span>{formatBytes(progress.done)} / {formatBytes(progress.total)}</span>
-                                    <span>{value.toFixed(1)}%</span>
-                                  </div>
-                                  <div className="flex justify-between text-xs text-muted-foreground">
-                                    <span>Speed: {formatSpeed(speed)}</span>
-                                    <span>Time: {formatElapsedTime(elapsedSeconds)}</span>
-                                  </div>
+                              {errorMessage && (
+                                <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2">
+                                  <p className="text-xs text-destructive/90 break-words">{errorMessage}</p>
                                 </div>
                               )}
-                            </>
-                          )}
-                        </li>
-                      );
-                    })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                              {progress && progress.total > 0 && (
+                                <>
+                                  <Progress value={value} />
+                                  {isActive && (
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-xs text-muted-foreground">
+                                        <span>{formatBytes(progress.done)} / {formatBytes(progress.total)}</span>
+                                        <span>{value.toFixed(1)}%</span>
+                                      </div>
+                                      <div className="flex justify-between text-xs text-muted-foreground">
+                                        <span>Speed: {formatSpeed(speed)}</span>
+                                        <span>Time: {formatElapsedTime(elapsedSeconds)}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="library" className="mt-0">

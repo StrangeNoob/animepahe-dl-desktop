@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs as tokiofs;
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, sleep};
 
 fn timestamp() -> String {
     let now = SystemTime::now()
@@ -220,12 +220,12 @@ async fn ffmpeg_hls(
     }
 
     eprintln!(
-        "{} Starting ffmpeg execution with 300-second timeout",
+        "{} Starting ffmpeg execution with 900-second timeout",
         timestamp()
     );
 
-    // Wrap ffmpeg execution in timeout to prevent hanging
-    let result = timeout(Duration::from_secs(300), async {
+    // Wrap ffmpeg execution in timeout to prevent hanging (increased from 300s to 900s)
+    let result = timeout(Duration::from_secs(900), async {
         if let Some(stderr) = child.stderr.take() {
             eprintln!("{} Begin reading ffmpeg stderr", timestamp());
             let reader = BufReader::new(stderr);
@@ -295,11 +295,11 @@ async fn ffmpeg_hls(
         }
         Err(_) => {
             eprintln!(
-                "{} FFmpeg execution timed out after 300 seconds",
+                "{} FFmpeg execution timed out after 900 seconds",
                 timestamp()
             );
             let _ = child.kill();
-            return Err(anyhow!("FFmpeg execution timed out after 300 seconds"));
+            return Err(anyhow!("FFmpeg execution timed out after 900 seconds"));
         }
     };
     if let Some((total, done)) = &progress {
@@ -393,19 +393,57 @@ fn resolve_ffmpeg() -> Result<PathBuf> {
     which::which("ffmpeg").map_err(|_| anyhow!("ffmpeg not found"))
 }
 
+async fn download_with_retry<F, T>(mut operation: F, max_retries: usize) -> Result<T>
+where
+    F: FnMut() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send>>,
+{
+    let mut last_error = None;
+    
+    for attempt in 0..=max_retries {
+        match operation().await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                last_error = Some(e);
+                if attempt < max_retries {
+                    let delay = Duration::from_millis(1000 * (2_u64.pow(attempt as u32))); // Exponential backoff
+                    eprintln!("{} Download attempt {} failed, retrying in {:?}: {}", 
+                        timestamp(), attempt + 1, delay, last_error.as_ref().unwrap());
+                    sleep(delay).await;
+                }
+            }
+        }
+    }
+    
+    Err(last_error.unwrap())
+}
+
 async fn download_to_file(url: &str, path: &Path, cookie: &str, host: &str) -> Result<usize> {
-    let client = create_client();
-    let resp = client
-        .get(url)
-        .header(reqwest::header::REFERER, host)
-        .header(reqwest::header::COOKIE, cookie)
-        .send()
-        .await?
-        .error_for_status()?;
-    let content = resp.bytes().await?;
-    let bytes_downloaded = content.len();
-    tokiofs::write(path, content).await?;
-    Ok(bytes_downloaded)
+    let url = url.to_string();
+    let path = path.to_path_buf();
+    let cookie = cookie.to_string();
+    let host = host.to_string();
+    
+    download_with_retry(|| {
+        let url = url.clone();
+        let path = path.clone();
+        let cookie = cookie.clone();
+        let host = host.clone();
+        
+        Box::pin(async move {
+            let client = create_client();
+            let resp = client
+                .get(&url)
+                .header(reqwest::header::REFERER, &host)
+                .header(reqwest::header::COOKIE, &cookie)
+                .send()
+                .await?
+                .error_for_status()?;
+            let content = resp.bytes().await?;
+            let bytes_downloaded = content.len();
+            tokiofs::write(&path, content).await?;
+            Ok(bytes_downloaded)
+        })
+    }, 3).await
 }
 
 async fn get_total_segment_size(seg_urls: &[String], cookie: &str, host: &str) -> Result<usize> {
@@ -464,15 +502,27 @@ async fn get_total_segment_size(seg_urls: &[String], cookie: &str, host: &str) -
 }
 
 async fn download_bytes(url: &str, cookie: &str, host: &str) -> Result<Vec<u8>> {
-    let client = create_client();
-    let resp = client
-        .get(url)
-        .header(reqwest::header::REFERER, host)
-        .header(reqwest::header::COOKIE, cookie)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(resp.bytes().await?.to_vec())
+    let url = url.to_string();
+    let cookie = cookie.to_string();
+    let host = host.to_string();
+    
+    download_with_retry(|| {
+        let url = url.clone();
+        let cookie = cookie.clone();
+        let host = host.clone();
+        
+        Box::pin(async move {
+            let client = create_client();
+            let resp = client
+                .get(&url)
+                .header(reqwest::header::REFERER, &host)
+                .header(reqwest::header::COOKIE, &cookie)
+                .send()
+                .await?
+                .error_for_status()?;
+            Ok(resp.bytes().await?.to_vec())
+        })
+    }, 3).await
 }
 
 async fn download_segments(
@@ -484,7 +534,8 @@ async fn download_segments(
     progress_done: Option<Arc<AtomicUsize>>,
     mut cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<()> {
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(threads));
+    // Use higher concurrency for segment downloads
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(threads * 2));
     let mut handles = FuturesUnordered::new();
 
     for (i, url) in seg_urls.iter().enumerate() {
@@ -498,7 +549,9 @@ async fn download_segments(
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await?;
             let seg_path = work_dir.join(format!("seg_{:06}.ts", i));
-            let bytes_downloaded = download_to_file(&url, &seg_path, &cookie, &host).await?;
+            
+            // Use streaming download for better performance
+            let bytes_downloaded = download_segment_streaming(&url, &seg_path, &cookie, &host).await?;
             if let Some(done) = progress_done {
                 done.fetch_add(bytes_downloaded, Ordering::Relaxed);
             }
@@ -521,6 +574,42 @@ async fn download_segments(
     }
 
     Ok(())
+}
+
+async fn download_segment_streaming(url: &str, path: &Path, cookie: &str, host: &str) -> Result<usize> {
+    let url = url.to_string();
+    let path = path.to_path_buf();
+    let cookie = cookie.to_string();
+    let host = host.to_string();
+    
+    download_with_retry(|| {
+        let url = url.clone();
+        let path = path.clone();
+        let cookie = cookie.clone();
+        let host = host.clone();
+        
+        Box::pin(async move {
+            let client = create_client();
+            let mut resp = client
+                .get(&url)
+                .header(reqwest::header::REFERER, &host)
+                .header(reqwest::header::COOKIE, &cookie)
+                .send()
+                .await?
+                .error_for_status()?;
+            
+            let mut file = tokiofs::File::create(&path).await?;
+            let mut bytes_downloaded = 0usize;
+            
+            // Stream the response directly to file for better memory usage
+            while let Some(chunk) = resp.chunk().await? {
+                bytes_downloaded += chunk.len();
+                tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
+            }
+            
+            Ok(bytes_downloaded)
+        })
+    }, 3).await
 }
 
 fn extract_key_uri(content: &str) -> Option<String> {
@@ -612,7 +701,11 @@ fn decrypt_aes128_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
 fn create_client() -> Client {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(60)) // Increased from 30
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .pool_max_idle_per_host(32) // Allow more connections per host
+        .http2_adaptive_window(true) // Enable HTTP/2 multiplexing
+        .tcp_keepalive(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to create HTTP client")
 }

@@ -23,11 +23,15 @@ export async function saveSettings(settings: Settings): Promise<void> {
     theme_dark: settings.themeDark,
     host_url: settings.hostUrl,
     tour_completed: settings.tourCompleted,
+    max_threads: settings.maxThreads,
   };
   await invoke("save_settings", { settings: payload });
 }
 
-export async function searchAnime(name: string, host: string): Promise<SearchItem[]> {
+export async function searchAnime(
+  name: string,
+  host: string
+): Promise<SearchItem[]> {
   return invoke("search_anime", { req: { name, host } });
 }
 
@@ -69,6 +73,7 @@ export interface StartDownloadRequest {
   resolution?: string;
   downloadDir?: string | null;
   host: string;
+  threads?: number;
 }
 
 export async function startDownload(req: StartDownloadRequest): Promise<void> {
@@ -82,6 +87,7 @@ export async function startDownload(req: StartDownloadRequest): Promise<void> {
       download_dir: req.downloadDir ?? null,
       host: req.host,
       resume_download_id: null,
+      threads: req.threads,
     },
   });
 }
@@ -91,6 +97,7 @@ interface AppSettingsRaw {
   theme_dark: boolean;
   host_url: string;
   tour_completed: boolean;
+  max_threads: number;
 }
 
 interface FetchEpisodesResponseRaw {
@@ -104,6 +111,7 @@ function normalizeSettings(raw: AppSettingsRaw): Settings {
     themeDark: raw.theme_dark,
     hostUrl: raw.host_url,
     tourCompleted: raw.tour_completed ?? false,
+    maxThreads: raw.max_threads ?? 8,
   };
 }
 
@@ -152,7 +160,9 @@ export async function clearCompletedDownloads(): Promise<void> {
   await invoke("clear_completed_downloads");
 }
 
-export async function validateDownloadIntegrity(downloadId: string): Promise<boolean> {
+export async function validateDownloadIntegrity(
+  downloadId: string
+): Promise<boolean> {
   return invoke("validate_download_integrity", { downloadId });
 }
 
@@ -165,11 +175,17 @@ export async function openPath(path: string): Promise<void> {
 }
 
 // Library API functions
-export async function checkEpisodeDownloaded(slug: string, episode: number): Promise<boolean> {
+export async function checkEpisodeDownloaded(
+  slug: string,
+  episode: number
+): Promise<boolean> {
   return invoke("check_episode_downloaded", { slug, episode });
 }
 
-export async function getLibraryEntry(slug: string, episode: number): Promise<LibraryEntry | null> {
+export async function getLibraryEntry(
+  slug: string,
+  episode: number
+): Promise<LibraryEntry | null> {
   return invoke("get_library_entry", { slug, episode });
 }
 
