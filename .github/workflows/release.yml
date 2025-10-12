@@ -95,7 +95,7 @@ jobs:
         shell: bash
 
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0.5
+        uses: tauri-apps/tauri-action@v0.5.14
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
@@ -114,3 +114,39 @@ jobs:
           tauriScript: npm run tauri
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # Verify Linux package metadata to ensure size information is properly embedded
+      # This helps software centers (GNOME Software, KDE Discover) display package sizes correctly
+      - name: Verify Linux Package Metadata
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          echo "=========================================="
+          echo "Verifying Linux Package Metadata"
+          echo "=========================================="
+
+          # Find and verify .deb packages
+          echo -e "\n📦 DEB Package Information:"
+          for deb in src-tauri/target/release/bundle/deb/*.deb; do
+            if [ -f "$deb" ]; then
+              echo -e "\n--- Package: $(basename "$deb") ---"
+              # Display control file which contains Size field
+              dpkg-deb --info "$deb" | grep -E "Package|Version|Architecture|Installed-Size|Section|Priority|Description"
+              # Display actual file size
+              echo "File Size: $(du -h "$deb" | cut -f1)"
+            fi
+          done
+
+          # Find and display AppImage sizes
+          echo -e "\n📦 AppImage Information:"
+          for appimage in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            if [ -f "$appimage" ]; then
+              echo -e "\n--- AppImage: $(basename "$appimage") ---"
+              echo "File Size: $(du -h "$appimage" | cut -f1)"
+              echo "Permissions: $(ls -lh "$appimage" | awk '{print $1, $5}')"
+            fi
+          done
+
+          echo -e "\n=========================================="
+          echo "✅ Metadata verification complete"
+          echo "=========================================="
+        shell: bash

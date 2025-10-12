@@ -186,6 +186,8 @@ pub struct StartDownloadRequest {
     pub host: String,
     #[serde(default)]
     pub resume_download_id: Option<String>,
+    #[serde(default)]
+    pub threads: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -255,7 +257,9 @@ pub async fn start_download(
         .download_dir
         .as_ref()
         .map(|p| std::path::PathBuf::from(p));
-    let threads = 2; // Default threads
+    let threads = req.threads.unwrap_or_else(|| {
+        state.settings.lock().unwrap().max_threads
+    });
     let episodes = req.episodes.clone();
 
     // Clone states before spawning to avoid lifetime issues
@@ -744,6 +748,7 @@ pub async fn resume_download(
             .map(|s| s.to_string()),
         host: state.settings.lock().unwrap().host_url.clone(),
         resume_download_id: None,
+        threads: None, // Use default from settings
     };
 
     // Start the download

@@ -162,7 +162,7 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
 }})()"#
     );
 
-    let printed = timeout(Duration::from_secs(10), async move {
+    let printed = timeout(Duration::from_secs(20), async move {
         tokio::task::spawn_blocking(move || -> Result<String> {
             let mut ctx = JsContext::default();
             let source = Source::from_bytes(wrapper.as_bytes());
@@ -181,7 +181,7 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
         .map_err(|err| anyhow!("JavaScript execution task failed: {err}"))?
     })
     .await
-    .context("JavaScript execution timed out after 10 seconds")??;
+    .context("JavaScript execution timed out after 20 seconds")??;
 
     eprintln!("JavaScript output length: {} bytes", printed.len());
 
@@ -200,8 +200,11 @@ pub async fn extract_m3u8_from_link(ep_link: &str, cookie: &str, host: &str) -> 
 fn client() -> Client {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36")
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(60)) // Increased from 30
+        .connect_timeout(Duration::from_secs(15)) // Increased from 10
+        .pool_max_idle_per_host(16) // Allow more connections per host
+        .http2_adaptive_window(true) // Enable HTTP/2 multiplexing
+        .tcp_keepalive(Duration::from_secs(30))
         .build()
         .expect("client")
 }
