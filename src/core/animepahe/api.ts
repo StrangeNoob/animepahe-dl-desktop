@@ -10,7 +10,7 @@ import type {
   LibraryEntry,
   AnimeStats,
   LibraryStats,
-} from "./types";
+} from "../types";
 
 export async function loadSettings(): Promise<Settings> {
   const raw = await invoke<AppSettingsRaw>("load_settings");

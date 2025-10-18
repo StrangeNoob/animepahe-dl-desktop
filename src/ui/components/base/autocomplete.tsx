@@ -9,7 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Loader2, Search } from "lucide-react";
 
-import { cn } from "../../core/utils/cn";
+import { cn } from "../../../core/utils/cn";
 
 export interface AutocompleteOption {
   value: string;
