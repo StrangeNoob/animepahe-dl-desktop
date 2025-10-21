@@ -10,16 +10,57 @@ export interface Settings {
 export interface SearchItem {
   session: string;
   title: string;
+  poster?: string | null;
+  image?: string | null;
+}
+
+export interface FeaturedAnime {
+  slug: string;
+  title: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  year?: number | null;
+  rating?: number | null;
+  genres: string[];
+}
+
+export interface LatestRelease {
+  slug: string;
+  animeTitle: string;
+  episodeNumber: number;
+  snapshotUrl: string;
+  sessionId: string;
+}
+
+export interface PaginatedLatestReleases {
+  releases: LatestRelease[];
+  currentPage: number;
+  totalItems: number;
+  perPage: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
 }
 
 export interface EpisodeInfo {
   number: number;
   session: string;
+  snapshotUrl?: string | null;
+  title?: string | null;
+  filesize?: number | null;
 }
 
 export interface FetchEpisodesResponse {
   episodes: EpisodeInfo[];
   displayName: string;
+  posterUrl?: string | null;
+  status?: string | null;
+  synopsis?: string | null;
+  genres: string[];
+  season?: string | null;
+  year?: number | null;
+  animeType?: string | null;
+  malLink?: string | null;
 }
 
 export interface CandidateSource {
@@ -140,7 +181,6 @@ export interface LibraryStats {
   total_anime: number;
   total_episodes: number;
   total_size: number;
-  total_watch_time: number;
 }
 
 // Notification types
@@ -175,4 +215,17 @@ export interface BatchDownloadState {
   isActive: boolean;
   startTime: number;
   currentEpisode?: number;
+}
+
+// Player types
+export interface VideoMetadata {
+  file_size: number;
+  file_path: string;
+}
+
+export interface PlayerSettings {
+  volume: number;
+  playbackSpeed: number;
+  autoplay: boolean;
+  pipEnabled: boolean;
 }

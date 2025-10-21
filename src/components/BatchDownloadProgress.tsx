@@ -1,6 +1,6 @@
 import React from 'react';
 import { Download, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '../core/utils';
 import { useNotificationContext } from '../contexts/NotificationContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';

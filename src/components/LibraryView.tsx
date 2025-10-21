@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
-import { Search, Download, Upload, HardDrive, Clock, Film } from "lucide-react";
-import { AnimeStats, LibraryStats } from "../types";
+import { Search, Download, Upload, HardDrive, Film } from "lucide-react";
+import { AnimeStats, LibraryStats } from "../core/types";
 import {
   getAnimeLibrary,
   getLibraryStats,
@@ -11,7 +11,7 @@ import {
   exportLibraryToFile,
   importLibraryFromFile,
   migrateLibraryPosters
-} from "../api";
+} from "../core/animepahe/api";
 import { AnimeCard } from "./AnimeCard";
 import { save, open } from "@tauri-apps/plugin-dialog";
 
@@ -107,11 +107,6 @@ export function LibraryView() {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    return `${hours}h`;
-  };
-
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -150,6 +145,7 @@ export function LibraryView() {
               </div>
             </CardContent>
           </Card>
+          {/* TODO: Watch Time card - requires implementing total_watch_time tracking
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center space-x-2">
@@ -161,6 +157,7 @@ export function LibraryView() {
               </div>
             </CardContent>
           </Card>
+          */}
         </div>
       )}
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { getIncompleteDownloads } from "../api";
-import type { DownloadRecord } from "../types";
+import { getIncompleteDownloads } from "../../core/animepahe/api";
+import type { DownloadRecord } from "../../core/types";
 
 export function useAutoResumeDetection() {
   const [incompleteDownloads, setIncompleteDownloads] = useState<DownloadRecord[]>([]);

@@ -13,7 +13,7 @@ import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Separator } from "./ui/separator";
 import { RefreshCw, Trash2, CheckCircle, XCircle, AlertCircle, FolderOpen } from "lucide-react";
-import type { DownloadRecord } from "../types";
+import type { DownloadRecord } from "../core/types";
 import {
   getIncompleteDownloads,
   resumeDownload,
@@ -21,7 +21,7 @@ import {
   clearCompletedDownloads,
   validateDownloadIntegrity,
   openPath,
-} from "../api";
+} from "../core/animepahe/api";
 
 interface ResumeDownloadsDialogProps {
   open: boolean;

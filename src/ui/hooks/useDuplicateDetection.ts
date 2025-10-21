@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { checkEpisodeDownloaded, getLibraryEntry } from "../api";
-import { LibraryEntry } from "../types";
+import { checkEpisodeDownloaded, getLibraryEntry } from "../../core/animepahe/api";
+import { LibraryEntry } from "../../core/types";
 
 export interface DuplicateEpisode {
   episode: number;

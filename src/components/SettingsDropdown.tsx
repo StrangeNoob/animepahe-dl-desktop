@@ -20,7 +20,7 @@ import {
   Save,
   HelpCircle,
 } from "lucide-react";
-import type { Settings } from "../types";
+import type { Settings } from "../core/types";
 
 interface SettingsDropdownProps {
   settings: Settings;

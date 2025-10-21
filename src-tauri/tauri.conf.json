@@ -28,6 +28,14 @@
     ],
     "security": {
       "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$HOME/**",
+          "$DOWNLOAD/**",
+          "**"
+        ]
+      },
       "capabilities": [
         "default"
       ]

@@ -17,7 +17,7 @@ import {
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { playNotificationSound, openSystemSettings } from '../api';
+import { playNotificationSound, openSystemSettings } from '../core/animepahe/api';
 
 export function NotificationSettingsDialog() {
   const { settings, updateSettings } = useNotificationContext();

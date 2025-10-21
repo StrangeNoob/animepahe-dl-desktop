@@ -3,10 +3,10 @@ import { AlertTriangle, CheckCircle, ExternalLink, RefreshCw, Terminal, XCircle 
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Badge } from "./ui/badge";
-import type { RequirementsCheckResponse, RequirementStatus } from "../types";
-import { checkRequirements } from "../api";
+import type { RequirementsCheckResponse, RequirementStatus } from "../core/types";
+import { checkRequirements } from "../core/animepahe/api";
 import { usePostHog } from "posthog-js/react";
-import { open } from "@tauri-apps/plugin-shell";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 
 interface RequirementsDialogProps {
   open: boolean;
@@ -55,7 +55,7 @@ export function RequirementsDialog({ open, onOpenChange, requirements, onRequire
   const openInstallationGuide = (requirementName: string) => {
     const url = REQUIREMENT_LINKS[requirementName as keyof typeof REQUIREMENT_LINKS];
     if (url) {
-      open(url);
+      openUrl(url);
     }
   };
 

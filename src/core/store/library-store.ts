@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import type { LibraryState } from './types';
 import type { LibraryEntry, AnimeStats } from '../types';
+import { isTauri, safeInvoke } from '../utils/tauri';
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   entries: [],
@@ -11,15 +11,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // Actions
   loadLibrary: async () => {
-    set({ isLoading: true });
-    try {
-      const entries = await invoke<LibraryEntry[]>('get_library_entries');
-      const stats = await invoke<AnimeStats[]>('get_anime_stats');
-      set({ entries, animeStats: stats, isLoading: false });
-    } catch (err) {
-      console.error('Failed to load library:', err);
-      set({ isLoading: false });
+    if (!isTauri()) {
+      // Library not available in browser mode
+      set({ entries: [], animeStats: [], isLoading: false });
+      return;
     }
+
+    set({ isLoading: true });
+    const entries = await safeInvoke<LibraryEntry[]>('get_library_entries');
+    const stats = await safeInvoke<AnimeStats[]>('get_anime_stats');
+
+    // If commands aren't available, just set empty arrays
+    set({
+      entries: entries || [],
+      animeStats: stats || [],
+      isLoading: false
+    });
   },
 
   getAnimeEntries: (slug) => {
@@ -27,8 +34,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   deleteEntry: async (id) => {
+    if (!isTauri()) {
+      throw new Error('Library operations not available in browser mode');
+    }
     try {
-      await invoke('delete_library_entry', { id });
+      await safeInvoke('delete_library_entry', { id });
       set((state) => ({
         entries: state.entries.filter((entry) => entry.id !== id),
       }));
@@ -41,8 +51,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   exportLibrary: async (path) => {
+    if (!isTauri()) {
+      throw new Error('Library operations not available in browser mode');
+    }
     try {
-      await invoke('export_library', { path });
+      await safeInvoke('export_library', { path });
     } catch (err) {
       console.error('Failed to export library:', err);
       throw err;
@@ -50,8 +63,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   importLibrary: async (path) => {
+    if (!isTauri()) {
+      throw new Error('Library operations not available in browser mode');
+    }
     try {
-      await invoke('import_library', { path });
+      await safeInvoke('import_library', { path });
       await get().loadLibrary();
     } catch (err) {
       console.error('Failed to import library:', err);
@@ -60,8 +76,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   updateWatchCount: async (id) => {
+    if (!isTauri()) {
+      return;
+    }
     try {
-      await invoke('increment_watch_count', { id });
+      await safeInvoke('increment_watch_count', { id });
       set((state) => ({
         entries: state.entries.map((entry) =>
           entry.id === id ? { ...entry, watch_count: entry.watch_count + 1 } : entry

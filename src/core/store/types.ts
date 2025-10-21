@@ -91,12 +91,22 @@ export interface NetworkState {
   isOnline: boolean;
   isMobileData: boolean;
   batterySaver: boolean;
+  batteryLevel: number;
+  isCharging: boolean;
   downloadPolicy: 'always' | 'wifi-only' | 'manual';
+  batteryPolicy: 'ignore' | 'pause-when-low' | 'wifi-only-when-low';
+  batteryThreshold: number; // Percentage (0-100)
 
   // Actions
   setOnlineStatus: (online: boolean) => void;
   setMobileDataStatus: (mobileData: boolean) => void;
   setBatterySaver: (enabled: boolean) => void;
+  setBatteryLevel: (level: number) => void;
+  setChargingStatus: (charging: boolean) => void;
   setDownloadPolicy: (policy: NetworkState['downloadPolicy']) => void;
+  setBatteryPolicy: (policy: NetworkState['batteryPolicy']) => void;
+  setBatteryThreshold: (threshold: number) => void;
   canDownload: () => boolean;
+  shouldPauseForBattery: () => boolean;
+  shouldPauseForNetwork: () => boolean;
 }

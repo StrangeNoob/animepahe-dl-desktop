@@ -1,8 +1,8 @@
 import { AlertCircle, X, Folder, Eye } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
-import { DuplicateEpisode } from "../hooks/useDuplicateDetection";
-import { openPath } from "../api";
+import { DuplicateEpisode } from "../ui/hooks/useDuplicateDetection";
+import { openPath } from "../core/animepahe/api";
 
 interface DuplicateWarningProps {
   duplicates: DuplicateEpisode[];

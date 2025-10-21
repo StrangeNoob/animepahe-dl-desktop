@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Settings,
   SearchItem,
+  FeaturedAnime,
+  LatestRelease,
+  PaginatedLatestReleases,
   FetchEpisodesResponse,
   PreviewItem,
   EpisodeInfo,
@@ -23,6 +26,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
     theme_dark: settings.themeDark,
     host_url: settings.hostUrl,
     tour_completed: settings.tourCompleted,
+    analytics_enabled: settings.analyticsEnabled,
     max_threads: settings.maxThreads,
   };
   await invoke("save_settings", { settings: payload });
@@ -35,18 +39,27 @@ export async function searchAnime(
   return invoke("search_anime", { req: { name, host } });
 }
 
+export async function fetchFeaturedAnime(
+  host: string
+): Promise<FeaturedAnime[]> {
+  return invoke("fetch_featured_anime", { req: { host } });
+}
+
+export async function fetchLatestReleases(
+  host: string,
+  page?: number
+): Promise<PaginatedLatestReleases> {
+  return invoke("fetch_latest_releases", { req: { host, page: page ?? 1 } });
+}
+
 export async function fetchEpisodes(
   slug: string,
   host: string,
   nameHint: string
 ): Promise<FetchEpisodesResponse> {
-  const raw = await invoke<FetchEpisodesResponseRaw>("fetch_episodes", {
+  return invoke<FetchEpisodesResponse>("fetch_episodes", {
     req: { slug, host, name_hint: nameHint },
   });
-  return {
-    episodes: raw.episodes,
-    displayName: raw.display_name,
-  };
 }
 
 export async function previewSources(
@@ -62,6 +75,16 @@ export async function previewSources(
       episodes,
       cached: cached.episodes,
     },
+  });
+}
+
+export async function resolveVideoUrl(
+  embedUrl: string,
+  host: string
+): Promise<string> {
+  return invoke("resolve_video_url", {
+    embedUrl,
+    host,
   });
 }
 
@@ -97,13 +120,10 @@ interface AppSettingsRaw {
   theme_dark: boolean;
   host_url: string;
   tour_completed: boolean;
+  analytics_enabled: boolean;
   max_threads: number;
 }
 
-interface FetchEpisodesResponseRaw {
-  episodes: EpisodeInfo[];
-  display_name: string;
-}
 
 function normalizeSettings(raw: AppSettingsRaw): Settings {
   return {
@@ -111,6 +131,7 @@ function normalizeSettings(raw: AppSettingsRaw): Settings {
     themeDark: raw.theme_dark,
     hostUrl: raw.host_url,
     tourCompleted: raw.tour_completed ?? false,
+    analyticsEnabled: raw.analytics_enabled ?? false,
     maxThreads: raw.max_threads ?? 8,
   };
 }
@@ -257,3 +278,22 @@ export async function updateTrayTitle(title: string): Promise<void> {
 export async function openSystemSettings(): Promise<void> {
   await invoke("open_system_settings");
 }
+
+export async function fetchImageProxy(url: string): Promise<number[]> {
+  return invoke("fetch_image_proxy", { url });
+}
+
+// =============== Player API functions ===============
+
+export async function getLocalVideoUrl(filePath: string): Promise<string> {
+  return invoke("get_local_video_url", { filePath });
+}
+
+export async function validateVideoFile(filePath: string): Promise<void> {
+  await invoke("validate_video_file", { filePath });
+}
+
+export async function getVideoMetadata(filePath: string): Promise<{ file_size: number; file_path: string }> {
+  return invoke("get_video_metadata", { filePath });
+}
+

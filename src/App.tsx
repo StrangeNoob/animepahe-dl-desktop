@@ -2,10 +2,16 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { PostHogProvider } from './lib/posthog';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { TourProvider } from './components/tour/TourProvider';
+import { ChromeSlotsProvider } from './ui/contexts/ChromeSlots';
 import { AppChrome } from './ui/layouts/AppChrome';
+import { HomeScreen } from './screens/home/HomeScreen';
+import { SearchScreen } from './screens/search/SearchScreen';
 import { DownloadScreen } from './screens/download/DownloadScreen';
 import { LibraryScreen } from './screens/library/LibraryScreen';
 import { SettingsScreen } from './screens/settings/SettingsScreen';
+import { TitleScreen } from './screens/title/TitleScreen';
+import { EpisodesScreen } from './screens/episodes/EpisodesScreen';
+import { PlayerScreen } from './screens/player/PlayerScreen';
 import { usePreferenceStore } from './core/store';
 import { useEffect } from 'react';
 
@@ -41,20 +47,31 @@ export default function App() {
           onSettingsUpdate={() => {}}
         >
           <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<AppChrome />}>
-                {/* Default route redirects to download */}
-                <Route index element={<Navigate to="/download" replace />} />
+            <ChromeSlotsProvider>
+              <Routes>
+                {/* Full-screen player route (no AppChrome) */}
+                <Route path="/player" element={<PlayerScreen />} />
 
-                {/* Main application routes */}
-                <Route path="download" element={<DownloadScreen />} />
-                <Route path="library" element={<LibraryScreen />} />
-                <Route path="settings" element={<SettingsScreen />} />
+                <Route path="/" element={<AppChrome />}>
+                  {/* Default route redirects to home */}
+                  <Route index element={<Navigate to="/home" replace />} />
 
-                {/* Catch-all redirect to download */}
-                <Route path="*" element={<Navigate to="/download" replace />} />
-              </Route>
-            </Routes>
+                  {/* Main application routes */}
+                  <Route path="home" element={<HomeScreen />} />
+                  <Route path="search" element={<SearchScreen />} />
+                  <Route path="downloads" element={<DownloadScreen />} />
+                  <Route path="library" element={<LibraryScreen />} />
+                  <Route path="settings" element={<SettingsScreen />} />
+
+                  {/* Title and Episodes routes */}
+                  <Route path="title/:slug" element={<TitleScreen />} />
+                  <Route path="title/:slug/episodes" element={<EpisodesScreen />} />
+
+                  {/* Catch-all redirect to home */}
+                  <Route path="*" element={<Navigate to="/home" replace />} />
+                </Route>
+              </Routes>
+            </ChromeSlotsProvider>
           </BrowserRouter>
         </TourProvider>
       </NotificationProvider>

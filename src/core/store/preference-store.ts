@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { invoke } from '@tauri-apps/api/core';
 import type { PreferenceState } from './types';
+import { isTauri, safeInvoke } from '../utils/tauri';
 
 const defaultSettings = {
   downloadDir: null,
@@ -59,57 +59,44 @@ export const usePreferenceStore = create<PreferenceState>()(
       },
 
       loadSettings: async () => {
-        try {
-          const settings = await invoke<typeof defaultSettings>('load_settings');
-          set(settings);
-        } catch (err) {
-          console.error('Failed to load settings:', err);
+        if (!isTauri()) {
+          // In browser mode, settings are handled by zustand persist middleware
+          return;
         }
+        // Try to load from Tauri backend
+        const settings = await safeInvoke<typeof defaultSettings>('load_settings');
+        if (settings) {
+          set(settings);
+        }
+        // If null (command not found), just use default settings
       },
 
       saveSettings: async () => {
-        try {
-          const state = get();
-          const settings = {
-            downloadDir: state.downloadDir,
-            themeDark: state.themeDark,
-            hostUrl: state.hostUrl,
-            tourCompleted: state.tourCompleted,
-            analyticsEnabled: state.analyticsEnabled,
-            maxThreads: state.maxThreads,
-          };
-          await invoke('save_settings', { settings });
-        } catch (err) {
-          console.error('Failed to save settings:', err);
+        if (!isTauri()) {
+          // In browser mode, settings are handled by zustand persist middleware
+          return;
         }
+        // Try to save to Tauri backend
+        const state = get();
+        const settings = {
+          downloadDir: state.downloadDir,
+          themeDark: state.themeDark,
+          hostUrl: state.hostUrl,
+          tourCompleted: state.tourCompleted,
+          analyticsEnabled: state.analyticsEnabled,
+          maxThreads: state.maxThreads,
+        };
+        await safeInvoke('save_settings', { settings });
+        // If command not found, localStorage will handle persistence
       },
     }),
     {
       name: 'animepahe-preferences',
-      storage: createJSONStorage(() => ({
-        getItem: async (name) => {
-          try {
-            const value = await invoke<string>('get_storage_item', { key: name });
-            return value;
-          } catch {
-            return null;
-          }
-        },
-        setItem: async (name, value) => {
-          try {
-            await invoke('set_storage_item', { key: name, value });
-          } catch (err) {
-            console.error('Failed to store item:', err);
-          }
-        },
-        removeItem: async (name) => {
-          try {
-            await invoke('remove_storage_item', { key: name });
-          } catch (err) {
-            console.error('Failed to remove item:', err);
-          }
-        },
-      })),
+      storage: createJSONStorage(() => {
+        // Always use localStorage - it works in both browser and Tauri
+        // Tauri storage commands may not be available in all versions
+        return localStorage;
+      }),
     }
   )
 );

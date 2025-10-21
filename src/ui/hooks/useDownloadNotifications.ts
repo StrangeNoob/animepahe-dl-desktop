@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
-import type { DownloadCompleteNotification, ToastNotification } from '../types';
-import { useNotificationContext } from '../contexts/NotificationContext';
-import { playNotificationSound, updateTrayTitle, openPath } from '../api';
+import type { DownloadCompleteNotification, ToastNotification } from '../../core/types';
+import { useNotificationContext } from '../../contexts/NotificationContext';
+import { playNotificationSound, updateTrayTitle, openPath } from '../../core/animepahe/api';
 
 export function useDownloadNotifications() {
   const { settings, batchState, incrementCompleted, incrementFailed, completeBatch } = useNotificationContext();

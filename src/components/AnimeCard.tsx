@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardFooter } from "./ui/card";
 import { Button } from "./ui/button";
-import { Play, Trash2, Calendar } from "lucide-react";
-import { AnimeStats } from "../types";
-import { deleteAnimeFromLibrary, fetchImageAsBase64 } from "../api";
-import { EpisodeListDialog } from "./EpisodeListDialog";
+import { Play, Trash2, Calendar, MoreVertical, FolderOpen } from "lucide-react";
+import { AnimeStats } from "../core/types";
+import { deleteAnimeFromLibrary, fetchImageAsBase64, getAnimeEpisodes, openPath } from "../core/animepahe/api";
+import { TitleSheet } from "../ui/components/library/TitleSheet";
+import { usePlayerStore } from "../core/store/player-store";
 
 interface AnimeCardProps {
   anime: AnimeStats;
@@ -13,7 +15,9 @@ interface AnimeCardProps {
 }
 
 export function AnimeCard({ anime, onDelete, formatSize }: AnimeCardProps) {
-  const [showEpisodes, setShowEpisodes] = useState(false);
+  const navigate = useNavigate();
+  const { playEpisode } = usePlayerStore();
+  const [showTitleSheet, setShowTitleSheet] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
@@ -54,6 +58,39 @@ export function AnimeCard({ anime, onDelete, formatSize }: AnimeCardProps) {
     }
   };
 
+  const handlePlay = async () => {
+    try {
+      const episodes = await getAnimeEpisodes(anime.slug);
+      if (episodes.length > 0) {
+        const firstEpisode = episodes[0];
+        await playEpisode({
+          slug: anime.slug,
+          animeName: anime.anime_name,
+          episode: firstEpisode.episode,
+          source: "local",
+          filePath: firstEpisode.file_path,
+          posterUrl: anime.thumbnail_url ?? undefined,
+        });
+        navigate(`/player?slug=${anime.slug}&episode=${firstEpisode.episode}&source=local`);
+      }
+    } catch (error) {
+      console.error("Failed to play anime:", error);
+    }
+  };
+
+  const handleReveal = async () => {
+    try {
+      const episodes = await getAnimeEpisodes(anime.slug);
+      if (episodes.length > 0) {
+        const directory = episodes[0].file_path.split('/').slice(0, -1).join('/');
+        console.log("Revealing in finder:", directory);
+        await openPath(directory);
+      }
+    } catch (error) {
+      console.error("Failed to reveal in finder:", error);
+    }
+  };
+
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString();
   };
@@ -90,30 +127,45 @@ export function AnimeCard({ anime, onDelete, formatSize }: AnimeCardProps) {
         <CardFooter className="gap-2">
           <Button
             variant="outline"
-            className="flex-1"
-            onClick={() => setShowEpisodes(true)}
+            size="icon"
+            onClick={handlePlay}
+            title="Play first episode"
           >
-            <Play className="h-4 w-4 mr-2" />
-            Episodes
+            <Play className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleReveal}
+            title="Reveal in finder"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setShowTitleSheet(true)}
+          >
+            <MoreVertical className="h-4 w-4 mr-2" />
+            Details
           </Button>
           <Button
             variant="destructive"
             size="icon"
             onClick={handleDelete}
             disabled={isDeleting}
+            title="Delete from library"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
         </CardFooter>
       </Card>
 
-      <EpisodeListDialog
-        open={showEpisodes}
-        onOpenChange={setShowEpisodes}
-        slug={anime.slug}
-        animeName={anime.anime_name}
+      <TitleSheet
+        open={showTitleSheet}
+        onOpenChange={setShowTitleSheet}
+        anime={anime}
         onUpdate={onDelete}
-        formatSize={formatSize}
       />
     </>
   );

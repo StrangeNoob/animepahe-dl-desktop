@@ -7,13 +7,13 @@ import {
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Play, Folder, Trash2, Eye } from "lucide-react";
-import { LibraryEntry } from "../types";
+import { LibraryEntry } from "../core/types";
 import {
   getAnimeEpisodes,
   deleteLibraryEntry,
   markEpisodeWatched,
   openPath
-} from "../api";
+} from "../core/animepahe/api";
 
 interface EpisodeListDialogProps {
   open: boolean;
