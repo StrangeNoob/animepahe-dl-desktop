@@ -13,7 +13,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "../../ui/components/base/dropdown-menu";
 
 export function PlayerScreen() {
   const navigate = useNavigate();

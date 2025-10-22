@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardFooter } from "./ui/card";
-import { Button } from "./ui/button";
+import { Card, CardContent, CardFooter } from "../ui/components/base/card";
+import { Button } from "../ui/components/base/button";
 import { Play, Trash2, Calendar, MoreVertical, FolderOpen } from "lucide-react";
 import { AnimeStats } from "../core/types";
 import { deleteAnimeFromLibrary, fetchImageAsBase64, getAnimeEpisodes, openPath } from "../core/animepahe/api";

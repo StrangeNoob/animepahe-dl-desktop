@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/components/base/card';
-import { Input } from '../../components/ui/input';
-import { Button } from '../../components/ui/button';
-import { Switch } from '../../components/ui/switch';
-import { Label } from '../../components/ui/label';
+import { Input } from '../../ui/components/base/input';
+import { Button } from '../../ui/components/base/button';
+import { Switch } from '../../ui/components/base/switch';
+import { Label } from '../../ui/components/base/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
+} from '../../ui/components/base/select';
 import {
   Settings as SettingsIcon,
   Sun,

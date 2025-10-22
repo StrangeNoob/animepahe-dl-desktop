@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Input } from '../../components/ui/input';
-import { Button } from '../../components/ui/button';
+import { Input } from '../../ui/components/base/input';
+import { Button } from '../../ui/components/base/button';
 import { Card, CardContent } from '../../ui/components/base/card';
 import { Search, Download, Upload, HardDrive, Film } from 'lucide-react';
 import { AnimeStats, LibraryStats } from '../../core/types';

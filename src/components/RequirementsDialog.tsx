@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { AlertTriangle, CheckCircle, ExternalLink, RefreshCw, Terminal, XCircle } from "lucide-react";
-import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Badge } from "./ui/badge";
+import { Button } from "../ui/components/base/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/components/base/dialog";
+import { Badge } from "../ui/components/base/badge";
 import type { RequirementsCheckResponse, RequirementStatus } from "../core/types";
 import { checkRequirements } from "../core/animepahe/api";
 import { usePostHog } from "posthog-js/react";

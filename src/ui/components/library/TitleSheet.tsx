@@ -7,8 +7,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from '../base/sheet';
-import { Button } from '../../../components/ui/button';
-import { ScrollArea } from '../../../components/ui/scroll-area';
+import { Button } from '../base/button';
+import { ScrollArea } from '../base/scroll-area';
 import { usePlayerStore } from '../../../core/store/player-store';
 import {
   Play,

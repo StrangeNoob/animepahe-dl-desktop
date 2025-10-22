@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Switch } from "./ui/switch";
+import { Button } from "../ui/components/base/button";
+import { Input } from "../ui/components/base/input";
+import { Switch } from "../ui/components/base/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,7 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "../ui/components/base/dropdown-menu";
 import {
   Settings as SettingsIcon,
   Sun,

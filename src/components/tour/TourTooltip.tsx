@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, X, HelpCircle } from "lucide-react";
-import { Button } from "../ui/button";
-import { Card, CardContent } from "../ui/card";
+import { Button } from "../../ui/components/base/button";
+import { Card, CardContent } from "../../ui/components/base/card";
 import type { TourStep } from "../../core/types";
 
 interface TourTooltipProps {

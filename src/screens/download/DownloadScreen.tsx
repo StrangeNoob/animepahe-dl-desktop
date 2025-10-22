@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/components/base/card';
-import { Input } from '../../components/ui/input';
-import { Button } from '../../components/ui/button';
-import { Progress } from '../../components/ui/progress';
+import { Input } from '../../ui/components/base/input';
+import { Button } from '../../ui/components/base/button';
+import { Progress } from '../../ui/components/base/progress';
 import { Autocomplete, AutocompleteOption } from '../../ui/components/base/autocomplete';
 import {
   Download as DownloadIcon,

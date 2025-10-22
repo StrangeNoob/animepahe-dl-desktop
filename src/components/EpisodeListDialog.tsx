@@ -4,8 +4,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog";
-import { Button } from "./ui/button";
+} from "../ui/components/base/dialog";
+import { Button } from "../ui/components/base/button";
 import { Play, Folder, Trash2, Eye } from "lucide-react";
 import { LibraryEntry } from "../core/types";
 import {

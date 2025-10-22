@@ -1,6 +1,6 @@
 import { AlertCircle, X, Folder, Eye } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
-import { Button } from "./ui/button";
+import { Alert, AlertDescription, AlertTitle } from "../ui/components/base/alert";
+import { Button } from "../ui/components/base/button";
 import { DuplicateEpisode } from "../ui/hooks/useDuplicateDetection";
 import { openPath } from "../core/animepahe/api";
 

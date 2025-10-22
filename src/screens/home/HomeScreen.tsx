@@ -4,7 +4,7 @@ import { fetchLatestReleases } from '../../core/animepahe/api';
 import { usePreferenceStore } from '../../core/store';
 import type { LatestRelease, PaginatedLatestReleases } from '../../core/types';
 import { ImageWithProxy } from '../../ui/components/base/ImageWithProxy';
-import { Button } from '../../components/ui/button';
+import { Button } from '../../ui/components/base/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**

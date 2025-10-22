@@ -2,8 +2,8 @@ import React from 'react';
 import { Download, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { cn } from '../core/utils';
 import { useNotificationContext } from '../contexts/NotificationContext';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Progress } from './ui/progress';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/components/base/card';
+import { Progress } from '../ui/components/base/progress';
 
 export function BatchDownloadProgress() {
   const { batchState } = useNotificationContext();

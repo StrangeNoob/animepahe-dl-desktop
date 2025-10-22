@@ -1,5 +1,5 @@
 import { X, RefreshCw } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "../ui/components/base/button";
 
 interface ResumeNotificationBannerProps {
   count: number;

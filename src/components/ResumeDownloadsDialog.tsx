@@ -6,12 +6,12 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "./ui/dialog";
-import { Button } from "./ui/button";
-import { Progress } from "./ui/progress";
-import { Badge } from "./ui/badge";
-import { ScrollArea } from "./ui/scroll-area";
-import { Separator } from "./ui/separator";
+} from "../ui/components/base/dialog";
+import { Button } from "../ui/components/base/button";
+import { Progress } from "../ui/components/base/progress";
+import { Badge } from "../ui/components/base/badge";
+import { ScrollArea } from "../ui/components/base/scroll-area";
+import { Separator } from "../ui/components/base/separator";
 import { RefreshCw, Trash2, CheckCircle, XCircle, AlertCircle, FolderOpen } from "lucide-react";
 import type { DownloadRecord } from "../core/types";
 import {
