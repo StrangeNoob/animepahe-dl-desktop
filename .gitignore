@@ -3,7 +3,6 @@ anime.list
 */.source.json
 */*.mp4
 node_modules
-.env
 .editorconfig
 .git
 cookie.json
@@ -24,3 +23,4 @@ vendor/*
 
 src-tauri/resources/ffmpeg/*
 !src-tauri/resources/ffmpeg/**/.gitkeep
+config.bat
