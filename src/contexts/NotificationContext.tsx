@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { NotificationSettings, BatchDownloadState } from '../types';
+import type { NotificationSettings, BatchDownloadState } from '../core/types';
 
 interface NotificationContextType {
   settings: NotificationSettings;

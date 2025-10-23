@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
+import { Button } from "../ui/components/base/button";
+import { Badge } from "../ui/components/base/badge";
 import {
   Shield,
   Trash2,
