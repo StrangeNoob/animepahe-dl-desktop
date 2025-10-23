@@ -5,14 +5,23 @@ mod commands;
 mod download;
 mod download_tracker;
 mod library;
+mod player;
 mod scrape;
 mod settings;
+mod video_server;
 
 use crate::settings::AppState;
 use crate::commands::DownloadState;
 use crate::download_tracker::DownloadTracker;
 use crate::library::Library;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tauri::{Manager, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, TrayIconEvent}};
+
+// Video server state
+pub struct VideoServerState {
+    pub server_url: Arc<RwLock<Option<String>>>,
+}
 
 fn main() {
     // Initialize download tracker and library
@@ -27,6 +36,11 @@ fn main() {
     let library = Library::new(library_db_path)
         .expect("Failed to initialize library");
 
+    // Initialize video server state
+    let video_server_state = VideoServerState {
+        server_url: Arc::new(RwLock::new(None)),
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -35,7 +49,31 @@ fn main() {
         .manage(DownloadState::new())
         .manage(download_tracker)
         .manage(library)
+        .manage(video_server_state)
         .setup(|app| {
+            // Start video streaming server
+            let server_state = app.state::<VideoServerState>();
+            let server_url_clone = server_state.server_url.clone();
+            let _app_handle = app.handle().clone();
+
+            tauri::async_runtime::spawn(async move {
+                // Find ffmpeg path
+                let ffmpeg_path = which::which("ffmpeg")
+                    .ok()
+                    .and_then(|p| p.to_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "ffmpeg".to_string());
+
+                match video_server::start_video_server(ffmpeg_path).await {
+                    Ok(url) => {
+                        println!("Video streaming server started at: {}", url);
+                        *server_url_clone.write().await = Some(url);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to start video server: {}", e);
+                    }
+                }
+            });
+
             // Setup system tray
             let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let hide_item = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
@@ -80,8 +118,11 @@ fn main() {
             commands::load_settings,
             commands::save_settings,
             commands::search_anime,
+            commands::fetch_featured_anime,
+            commands::fetch_latest_releases,
             commands::fetch_episodes,
             commands::preview_sources,
+            commands::resolve_video_url,
             commands::start_download,
             commands::check_requirements,
             commands::open_path,
@@ -110,7 +151,14 @@ fn main() {
             commands::fetch_image_as_base64,
             commands::play_notification_sound,
             commands::update_tray_title,
-            commands::open_system_settings
+            commands::open_system_settings,
+            commands::fetch_image_proxy,
+            // Player commands
+            commands::get_local_video_url,
+            commands::get_video_stream_url,
+            commands::get_compatible_video_path,
+            commands::validate_video_file,
+            commands::get_video_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

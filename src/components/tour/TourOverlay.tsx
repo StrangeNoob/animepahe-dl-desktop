@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { TourTooltip } from "./TourTooltip";
-import type { TourStep } from "../../types";
+import type { TourStep } from "../../core/types";
 
 interface TourOverlayProps {
   currentStep: number;
