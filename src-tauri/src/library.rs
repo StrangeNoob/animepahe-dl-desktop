@@ -38,7 +38,6 @@ pub struct LibraryStats {
     pub total_anime: i64,
     pub total_episodes: i64,
     pub total_size: i64,
-    pub total_watch_time: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -259,22 +258,20 @@ impl Library {
     pub fn get_library_stats(&self) -> Result<LibraryStats> {
         let conn = self.conn.lock().unwrap();
 
-        let (total_anime, total_episodes, total_size, total_watch_time): (i64, i64, i64, i64) = conn.query_row(
+        let (total_anime, total_episodes, total_size): (i64, i64, i64) = conn.query_row(
             "SELECT
                 COUNT(DISTINCT slug),
                 COUNT(*),
-                COALESCE(SUM(file_size), 0),
-                COALESCE(SUM(duration_seconds * watch_count), 0)
+                COALESCE(SUM(file_size), 0)
              FROM library",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
 
         Ok(LibraryStats {
             total_anime,
             total_episodes,
             total_size,
-            total_watch_time,
         })
     }
 

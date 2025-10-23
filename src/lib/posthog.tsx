@@ -1,7 +1,7 @@
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
 import { useEffect, useRef, useState } from 'react'
-import { trackAppStartupTime } from './analytics-utils'
+import { trackAppStartupTime } from '../core/utils/analytics'
 import crypto from 'crypto-js'
 import { getVersion } from '@tauri-apps/api/app'
 

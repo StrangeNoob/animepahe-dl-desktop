@@ -165,7 +165,9 @@ pub async fn download_episode(
             // decrypted file has same name without .encrypted
             final_path.set_extension("");
         }
-        writeln!(list_file, "file '{}'", final_path.display())?;
+        // Escape single quotes in path for ffmpeg concat file list
+        let path_str = final_path.display().to_string().replace("'", "'\\''");
+        writeln!(list_file, "file '{}'", path_str)?;
     }
 
     // Concat

@@ -1,7 +1,7 @@
 # Architecture
 
 ## Purpose
-Animepahe DL Desktop wraps the original CLI downloader in a cross-platform desktop experience. A Tauri 2 container embeds a React 18 user interface while delegating network scraping and video processing to a Rust backend. The two halves talk exclusively through Tauri commands/events, keeping the UI sandboxed from direct filesystem and process access.
+Animepahe DL Desktop is a universal desktop application that combines anime discovery, downloading, library management, and playback in a single cohesive experience. Built on Tauri 2 with React 18, it features a screen-based architecture with responsive navigation, state management via Zustand, and a powerful Rust backend for network operations and video processing.
 
 ## Runtime Topology
 ```
@@ -18,29 +18,100 @@ Animepahe DL Desktop wraps the original CLI downloader in a cross-platform deskt
 - Backend registers Tauri commands in `src-tauri/src/commands.rs` and holds shared state (`AppState`) for settings + session cookie.
 - Background jobs (downloads, scraping) run on the Tokio async runtime and stream progress back to the UI via window events (`download-status`, `download-progress`).
 
-## Frontend Layer
-- **Entry**: `src/main.tsx` boots React and mounts `<App/>`.
-- **Shell component**: `src/App.tsx` orchestrates the complete workflow—loading settings, search debounce, episode selection, preview modal, dependency prompts, and download initiation.
-- **API bridge**: `src/api.ts` wraps `@tauri-apps/api/core.invoke`, translating TypeScript models (`src/types.ts`) to Rust payloads (law-of-demeter for the UI).
-- **UI toolkit**: Tailwind CSS + shadcn/ui + Radix primitives power consistent controls. The `components/ui` directory holds thin wrappers (buttons, select, dialog, progress, etc.).
-- **Autocomplete/search**: `components/ui/autocomplete.tsx` renders a floating portal dropdown and keyboard navigation, feeding throttled search queries back to App state.
-- **Onboarding tour**: `components/tour` maintains a context provider, overlay spotlight, and tooltip placement logic. Steps are defined declaratively in `tourSteps.ts` and are toggled via user actions or the first-run default.
-- **Requirements dialog**: `components/RequirementsDialog.tsx` displays dependency checks, provides install-guide links, and lets users rerun detection without restarting.
+## Frontend Architecture
 
-### React State Flow
-1. **Startup**: `loadSettings` populates default preferences; dark/light theme toggles update the root element classes.
-2. **Search**: Debounced `searchAnime` updates `searchResults`; selecting a result stores slug and resets downstream selections.
-3. **Fetch Episodes**: `fetchEpisodes` fills cached episode metadata used across preview/download.
-4. **Preview Sources**: `previewSources` requests detailed audio/resolution combinations and opens a modal table.
-5. **Download**: `startDownload` kicks off backend processing while the UI subscribes to status/progress events to paint the right-hand panel.
+### Directory Structure
+```
+src/
+├── screens/           # Screen-level components (routes)
+│   ├── home/         # HomeScreen - Dashboard and trending
+│   ├── search/       # SearchScreen - Anime search
+│   ├── title/        # TitleScreen - Anime details
+│   ├── episodes/     # EpisodesScreen - Episode selection
+│   ├── player/       # PlayerScreen - Video playback
+│   ├── download/     # DownloadScreen - Download queue
+│   ├── library/      # LibraryScreen - Local collection
+│   ├── settings/     # SettingsScreen - App preferences
+│   └── history/      # HistoryScreen - Watch history
+├── ui/               # UI layer components
+│   ├── components/   # Reusable UI components
+│   │   ├── base/     # Basic elements (Button, Input, etc.)
+│   │   ├── content/  # Content components (VideoPlayer, EpisodeRow, etc.)
+│   │   ├── navigation/ # Navigation (BottomNav, DesktopHeader, MobileTopBar)
+│   │   ├── filters/  # Filter components
+│   │   ├── library/  # Library-specific components
+│   │   └── queue/    # Download queue components
+│   ├── layouts/      # Layout components (AppChrome)
+│   ├── hooks/        # Custom React hooks
+│   └── contexts/     # React contexts (ChromeSlots)
+├── core/             # Core business logic
+│   ├── animepahe/    # Animepahe API integration
+│   ├── queue/        # Download queue manager
+│   ├── store/        # Zustand stores
+│   ├── types/        # TypeScript types
+│   └── utils/        # Utility functions
+└── App.tsx           # Root component with routing
+```
+
+### Navigation System
+
+**Responsive Navigation**
+- **Mobile (< md breakpoint)**:
+  - `BottomNav` component with 5 tabs (Home, Search, Downloads, Library, Settings)
+  - `MobileTopBar` with automatic back button detection for nested routes
+  - Back button shows when route depth > 1 (e.g., `/title/:slug`)
+
+- **Desktop (≥ md breakpoint)**:
+  - `DesktopHeader` with horizontal navigation
+  - Automatic back button appears before logo for nested routes
+  - Route detection: `location.pathname.split('/').filter(Boolean).length > 1`
+
+**Chrome Slots Pattern**
+The `ChromeSlots` context provides dynamic UI injection:
+- `setMobileTopBarTitle()` - Set screen title
+- `setContextBar()` - Show context-sensitive actions (e.g., download bar)
+- `clearSlots()` - Clean up on unmount
+
+### State Management (Zustand)
+
+**Core Stores**:
+- `preference-store.ts` - User preferences (download dir, host URL, theme, threads)
+- `library-store.ts` - Downloaded episodes, library metadata
+- `player-store.ts` - Video player state, playback queue, PiP settings
+- `history-store.ts` - Watch history, progress tracking
+- `network-store.ts` - Network state, connectivity
+
+All stores use Zustand with persistence middleware for automatic state saving.
+
+### Screen Flow
+1. **Home** → Browse trending/recent → Navigate to Title
+2. **Search** → Find anime → Navigate to Title
+3. **Title** → View details → Navigate to Episodes or Play episode
+4. **Episodes** → Select episodes → Add to download queue → Navigate to Downloads
+5. **Downloads** → Monitor progress → Auto-add to Library on completion
+6. **Library** → Browse collection → Play episode → Navigate to Player
+7. **Player** → Watch video → Save progress to History
+8. **Settings** → Configure app preferences
 
 ## Backend Layer
-- **Entry**: `src-tauri/src/main.rs` wires plugins (dialog) and registers command handlers.
-- **State management**: `settings.rs` handles JSON persistence under the OS config directory and tracks a generated Animepahe cookie for consistent sessions.
-- **HTTP API wrapper**: `api.rs` uses `reqwest` to call Animepahe endpoints, expand episode specs, and resolve playlist metadata.
-- **Scraper**: `scrape.rs` parses the play page, filters AV1 streams, and runs the obfuscated playlist JavaScript inside the embedded `boa_engine` runtime (pure Rust, no external toolchain).
-- **Downloader**: `download.rs` implements both single-thread (`ffmpeg` copy) and multi-thread segment download/decrypt pipelines. Progress is surfaced through shared atomics and emitted as `download-progress` events.
-- **Command orchestration**: `commands.rs` stitches everything together: preflight dependency checks, fetching, previewing, and the download loop that handles errors per episode while streaming user-facing status.
+
+### Core Modules
+- **Entry**: `src-tauri/src/main.rs` - Wires plugins, registers command handlers, initializes video server
+- **State management**: `settings.rs` - JSON persistence under OS config directory, session cookie tracking
+- **HTTP API wrapper**: `api.rs` - Animepahe endpoints, episode resolution, playlist metadata
+- **Scraper**: `scrape.rs` - Play page parsing, stream filtering, JavaScript execution via `boa_engine`
+- **Downloader**: `download.rs` - Single/multi-threaded pipelines, progress tracking, state persistence
+- **Video Server**: `video_server.rs` - Local HTTP server for library playback with proxy support
+- **Watch History**: `watch_history.rs` - Track playback progress, resume positions
+- **Player Integration**: `player.rs` - Video validation, local/remote source management
+- **Command orchestration**: `commands.rs` - Tauri command handlers for all frontend operations
+
+### New Backend Commands
+- `validate_video_file` - Check if local file exists and is readable
+- `get_local_video_url` - Generate localhost URL for library playback
+- `get_library_entry` - Fetch library metadata for downloaded episode
+- `check_episode_downloaded` - Verify if episode exists in library
+- `resolve_video_url` - Extract HLS stream URL from embed page
 
 ### Download Pipeline
 1. **Validation**: `check_requirements` asserts `node` and `ffmpeg` exist; failures short-circuit with a descriptive error the UI can surface.
@@ -68,8 +139,50 @@ Animepahe DL Desktop wraps the original CLI downloader in a cross-platform deskt
 - Dev loop: `npm run tauri dev` kicks off Vite (port 5173) and Tauri in watch mode.
 - Shell scripts in the repo automate distribution packaging (`build.sh`, `generate-app.sh`, `generate-dmg.sh`), and the legacy CLI `animepahe-dl.sh` remains for reference/testing.
 
+## Video Playback Architecture
+
+### Player Modes
+1. **Local Playback**:
+   - Files served via `video_server.rs` on localhost
+   - Direct file access with proxy support for CORS
+   - Automatic format detection and validation
+
+2. **Remote Streaming**:
+   - HLS stream resolution from embed URLs
+   - Quality/audio source selection
+   - Progressive loading with buffering
+
+### Player Store Flow
+```
+playEpisode(episode) → Validate source → Update player state →
+→ VideoPlayer component renders → Track progress → Save to history
+```
+
 ## Extension Guidelines
-- Add new backend capabilities as Tauri commands in `commands.rs`, exposing lightweight wrappers in `src/api.ts`.
-- Keep UI state changes localized to `AppContent` or custom hooks to maintain predictable flows.
-- When adding new dependencies, update `check_requirements` and surface clear messaging in the requirements dialog.
-- For download pipeline modifications, ensure progress events remain consistent to avoid breaking frontend rendering.
+
+### Adding New Screens
+1. Create screen component in `src/screens/<name>/`
+2. Add route in `App.tsx` with React Router
+3. Update navigation components (`BottomNav`, `DesktopHeader`)
+4. Use `ChromeSlots` context for dynamic UI (mobile top bar title, context bar)
+5. Create or update relevant Zustand store for state management
+
+### Adding Backend Capabilities
+1. Define Tauri command in `src-tauri/src/commands.rs`
+2. Create wrapper function in `src/core/animepahe/api.ts`
+3. Define TypeScript types in `src/core/types/index.ts`
+4. Update `check_requirements` if adding new dependencies
+5. Emit progress events for long-running operations
+
+### State Management Best Practices
+- Use Zustand stores for cross-screen state
+- Enable persistence for user preferences and session data
+- Keep component state local when not needed elsewhere
+- Use Chrome Slots for context-specific UI injection
+- Clean up effects and slots on component unmount
+
+### Navigation Patterns
+- Automatic back button shows for nested routes (depth > 1)
+- Use `navigate(-1)` for back navigation
+- Use `navigate('/path')` for forward navigation
+- Mobile and desktop navigation stay in sync via shared route state

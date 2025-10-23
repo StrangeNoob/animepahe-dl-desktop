@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the application",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -18,6 +20,7 @@
     "notification:allow-notify",
     "notification:allow-register-action-types",
     "notification:allow-register-listener",
-    "notification:allow-cancel"
+    "notification:allow-cancel",
+    "core:window:allow-set-fullscreen"
   ]
 }

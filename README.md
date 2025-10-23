@@ -6,13 +6,14 @@ Animepahe DL Desktop is now a Tauri + React application with a Rust backend. It 
 
 ## Highlights
 
-- 🔍 Guided discovery: search Animepahe, review matches, and apply slugs instantly.
-- 🎯 Precision controls: filter by resolution/audio, enter specs (`1,3-5,*`), or tick episodes from a checklist.
-- 📦 Source preview modal: inspect audio/resolution blends before downloading.
-- 🚀 Robust pipeline: ffmpeg single-thread mode with stderr progress plus multi-thread segment download/decrypt/concat.
-- 🔄 Smart resume downloads: auto-detect incomplete downloads on startup, validate file integrity, and resume from where you left off.
-- 🗂️ Persistent settings: theme, base URL, and download folder stored in the OS config dir.
-- 🛠️ CI-ready: GitHub Actions produces installers/archives for macOS, Windows, and Linux.
+- 🔍 **Universal Navigation**: Screen-based architecture with 8 core screens (Home, Search, Title, Episodes, Player, Downloads, Library, Settings) connected via React Router
+- 📱 **Responsive Design**: Adaptive UI with mobile bottom navigation and desktop horizontal header, both featuring automatic back button detection
+- 🎬 **Integrated Video Player**: Built-in player supporting both local library files and remote HLS streaming with quality selection
+- 📚 **Library Management**: Track downloaded episodes, watch history, and manage your local collection
+- 🎯 **Smart Episode Selection**: Pattern-based episode selection (ranges, latest N, specific episodes) with batch download support
+- 🚀 **Robust Download Pipeline**: Multi-threaded downloads with progress tracking, queue management, and automatic resume
+- 🔄 **State Persistence**: Zustand-based stores with persistence for preferences, library, player settings, and download queue
+- 🛠️ **CI-ready**: GitHub Actions produces installers/archives for macOS, Windows, and Linux
 
 ## Tech Stack
 
@@ -38,7 +39,6 @@ For detailed, OS-specific installation instructions for each requirement:
 
 - **[Node.js Installation Guide](requirements/NodeJS.md)** - Required for the React/Vite build tooling during development
 - **[FFmpeg Installation Guide](requirements/FFMPEG.md)** - Required for video processing
-- **[OpenSSL Installation Guide](requirements/OpenSSL.md)** - Required for encrypted content (multi-threaded downloads only)
 
 At runtime the desktop app only depends on `ffmpeg`; Node.js is needed solely for local development/build steps.
 
@@ -82,14 +82,30 @@ cargo build -p animepahe-tauri --release --locked
 
 ## Using the App
 
-1. **Search** – enter a title and click "Search".
-2. **Apply** – select a result to fill the slug automatically.
-3. **Fetch** – pull the episode catalogue, then tick entries or type a spec (`1,3-5,*`).
-4. **Preview** – open "Preview sources" to inspect audio/resolution streams.
-5. **Download** – adjust threads, choose the output folder, and start. Progress events stream live to the UI.
-6. **Resume** – if downloads are interrupted, the app auto-detects them on next launch and shows a notification banner. Click "Resume Downloads" to see all incomplete downloads, validate files, and continue from where you left off.
+### Main Screens
 
-Theme, base URL, and output directory are editable on the toolbar and persist between runs.
+1. **Home Screen** – Dashboard with recently watched episodes and quick access to trending content
+2. **Search Screen** – Search for anime titles with instant results and navigation to title details
+3. **Title Screen** – View anime details, synopsis, and episode grid with play/download options
+4. **Episodes Screen** – Select episodes using patterns (e.g., `1-5`, `latest 10`, `all`) and batch download
+5. **Player Screen** – Watch episodes locally or stream remotely with quality/audio selection and episode navigation
+6. **Downloads Screen** – Monitor active downloads, view queue, and manage download progress
+7. **Library Screen** – Browse downloaded episodes, continue watching, and manage your collection
+8. **Settings Screen** – Configure download directory, host URL, thread count, and app preferences
+
+### Navigation
+
+- **Mobile**: Bottom navigation bar with Home, Search, Downloads, Library, and Settings tabs. Automatic back button appears in the top bar for nested routes.
+- **Desktop**: Horizontal header navigation with the same 5 sections. Back button automatically shows before the logo for nested routes (e.g., viewing a specific title or episode list).
+
+### Workflow
+
+1. **Discover** – Search for anime on the Search screen or browse trending titles on Home
+2. **Explore** – View anime details on the Title screen with synopsis, metadata, and episode previews
+3. **Select** – Navigate to Episodes screen to select specific episodes using patterns or checkboxes
+4. **Download** – Choose quality/audio options and download to your configured directory
+5. **Watch** – Play episodes directly from the Library or Title screen, either locally or via streaming
+6. **Track** – Your watch history and progress are automatically saved across sessions
 
 ### Download State Persistence
 

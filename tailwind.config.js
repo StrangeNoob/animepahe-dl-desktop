@@ -4,6 +4,14 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      screens: {
+        xs: "380px",
+        sm: "480px",
+        md: "768px", // Mobile/Desktop breakpoint
+        lg: "1024px",
+        xl: "1280px",
+        "2xl": "1536px",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -57,6 +65,12 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+      },
+      boxShadow: {
+        glow: "0 0 24px rgba(var(--accent-rgb, 59 130 246), 0.35)",
+      },
+      spacing: {
+        safe: "env(safe-area-inset-bottom)",
       },
     },
   },

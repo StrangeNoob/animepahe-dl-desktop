@@ -37,13 +37,13 @@
     --card-foreground: 222 47% 12%;
     --border: 210 30% 85%;
     --input: 210 30% 85%;
-    --primary: 283 94% 58%;
+    --primary: 283 94% 49%;
     --primary-foreground: 210 40% 98%;
     --secondary: 195 100% 50%;
     --secondary-foreground: 222 47% 12%;
     --accent: 195 100% 50%;
     --accent-foreground: 222 47% 12%;
-    --destructive: 0 83% 61%;
+    --destructive: 0 83% 47%;
     --destructive-foreground: 210 40% 98%;
     --ring: 315 97% 65%;
   }
@@ -61,5 +61,23 @@
 @layer utilities {
   .glass-card {
     @apply relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_20px_60px_-25px_rgba(8,47,73,0.65)] backdrop-blur-xl;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, and Opera */
+  }
+
+  /* Safe area padding utilities */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
