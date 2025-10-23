@@ -11,6 +11,12 @@ pub struct AppSettings {
     pub host_url: String,
     #[serde(default)]
     pub tour_completed: bool,
+    #[serde(default = "default_max_threads")]
+    pub max_threads: usize,
+}
+
+fn default_max_threads() -> usize {
+    8
 }
 
 impl Default for AppSettings {
@@ -20,6 +26,7 @@ impl Default for AppSettings {
             theme_dark: true,
             host_url: "https://animepahe.si".into(),
             tour_completed: false,
+            max_threads: default_max_threads(),
         }
     }
 }

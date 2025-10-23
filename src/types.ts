@@ -4,6 +4,7 @@ export interface Settings {
   hostUrl: string;
   tourCompleted: boolean;
   analyticsEnabled: boolean;
+  maxThreads: number;
 }
 
 export interface SearchItem {
@@ -85,7 +86,11 @@ export interface TourContextType {
 }
 
 // Resume download types
-export type DownloadStatus = "inprogress" | "completed" | "failed" | "cancelled";
+export type DownloadStatus =
+  | "inprogress"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface DownloadRecord {
   id: string;
@@ -156,7 +161,7 @@ export interface NotificationSettings {
 
 export interface ToastNotification {
   id: string;
-  type: 'success' | 'error';
+  type: "success" | "error";
   anime_name: string;
   episode: number;
   file_path?: string;

@@ -85,10 +85,17 @@
           "libwebkit2gtk-4.0-37"
         ],
         "section": "utils",
-        "priority": "optional"
+        "priority": "optional",
+        "files": {}
       },
       "appimage": {
-        "bundleMediaFramework": false
+        "bundleMediaFramework": false,
+        "files": {}
+      },
+      "rpm": {
+        "epoch": 0,
+        "files": {},
+        "release": "1"
       }
     }
   },
