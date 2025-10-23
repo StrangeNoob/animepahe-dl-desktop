@@ -1,8 +1,8 @@
 import React from 'react';
 import { X, CheckCircle2, XCircle, Folder } from 'lucide-react';
-import { cn } from '../lib/utils';
-import type { ToastNotification } from '../types';
-import { openPath } from '../api';
+import { cn } from '../core/utils';
+import type { ToastNotification } from '../core/types';
+import { openPath } from '../core/animepahe/api';
 
 interface NotificationToastProps {
   toast: ToastNotification;
