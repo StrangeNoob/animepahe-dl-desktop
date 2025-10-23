@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import type { TourContextType, TourState, Settings } from "../../types";
+import type { TourContextType, TourState, Settings } from "../../core/types";
 import { tourSteps } from "./tourSteps";
 import { TourOverlay } from "./TourOverlay";
 import { usePostHog } from "posthog-js/react";

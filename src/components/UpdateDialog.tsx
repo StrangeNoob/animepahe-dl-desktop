@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/components/base/dialog';
+import { Button } from '../ui/components/base/button';
+import { Badge } from '../ui/components/base/badge';
 import { Download, ExternalLink, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import AppleIcon from '../assets/apple.svg?react';
 import WindowsIcon from '../assets/windows.svg?react';
