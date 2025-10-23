@@ -13,11 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './ui/dialog';
-import { Button } from './ui/button';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
-import { playNotificationSound, openSystemSettings } from '../api';
+} from '../ui/components/base/dialog';
+import { Button } from '../ui/components/base/button';
+import { Switch } from '../ui/components/base/switch';
+import { Label } from '../ui/components/base/label';
+import { playNotificationSound, openSystemSettings } from '../core/animepahe/api';
 
 export function NotificationSettingsDialog() {
   const { settings, updateSettings } = useNotificationContext();

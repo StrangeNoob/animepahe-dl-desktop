@@ -32,15 +32,27 @@ impl DownloadState {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct EpisodeInfo {
     pub number: u32,
     pub session: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FetchEpisodesResponse {
     pub episodes: Vec<EpisodeInfo>,
     pub display_name: String,
+    pub poster_url: Option<String>,
+    pub status: Option<String>,
+    pub synopsis: Option<String>,
+    pub genres: Vec<String>,
+    pub season: Option<String>,
+    pub year: Option<u32>,
+    pub anime_type: Option<String>,
+    pub mal_link: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +102,42 @@ pub async fn search_anime(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct FeaturedAnimeRequest {
+    pub host: String,
+}
+
+#[tauri::command]
+pub async fn fetch_featured_anime(
+    state: State<'_, AppState>,
+    req: FeaturedAnimeRequest,
+) -> Result<Vec<api::FeaturedAnime>, String> {
+    let cookie = state.cookie();
+    let host = settings::normalize_host(&req.host);
+    api::fetch_featured_anime(&cookie, &host)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LatestReleasesRequest {
+    pub host: String,
+    pub page: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn fetch_latest_releases(
+    state: State<'_, AppState>,
+    req: LatestReleasesRequest,
+) -> Result<api::PaginatedLatestReleases, String> {
+    let cookie = state.cookie();
+    let host = settings::normalize_host(&req.host);
+    let page = req.page.unwrap_or(1);
+    api::fetch_latest_releases(&cookie, &host, page)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[derive(Debug, Deserialize)]
 pub struct FetchEpisodesRequest {
     pub slug: String,
     pub host: String,
@@ -106,9 +154,21 @@ pub async fn fetch_episodes(
     let episodes = api::fetch_all_episodes(&req.slug, &cookie, &host)
         .await
         .map_err(|err| err.to_string())?;
-    let display = api::resolve_anime_name(&req.slug, &cookie, &req.name_hint, &host)
+
+    // Fetch full anime metadata
+    let metadata = api::fetch_anime_metadata(&req.slug, &cookie, &host)
         .await
-        .unwrap_or_else(|_| req.name_hint);
+        .unwrap_or_else(|_| api::AnimeMetadata {
+            title: req.name_hint.clone(),
+            synopsis: None,
+            genres: Vec::new(),
+            season: None,
+            year: None,
+            anime_type: None,
+            status: None,
+            mal_link: None,
+            poster_url: None,
+        });
 
     let mut items = Vec::new();
     for ep in episodes {
@@ -116,12 +176,21 @@ pub async fn fetch_episodes(
             items.push(EpisodeInfo {
                 number: num as u32,
                 session: ep.session.clone(),
+                snapshot_url: ep.snapshot.clone(),
             });
         }
     }
     Ok(FetchEpisodesResponse {
         episodes: items,
-        display_name: display,
+        display_name: metadata.title,
+        poster_url: metadata.poster_url,
+        status: metadata.status,
+        synopsis: metadata.synopsis,
+        genres: metadata.genres,
+        season: metadata.season,
+        year: metadata.year,
+        anime_type: metadata.anime_type,
+        mal_link: metadata.mal_link,
     })
 }
 
@@ -172,6 +241,21 @@ pub async fn preview_sources(
         });
     }
     Ok(items)
+}
+
+/// Resolve an embed URL (e.g., Kwik.cx) to the actual HLS stream URL
+#[tauri::command]
+pub async fn resolve_video_url(
+    state: State<'_, AppState>,
+    embed_url: String,
+    host: String,
+) -> Result<String, String> {
+    let cookie = state.cookie();
+    let normalized_host = settings::normalize_host(&host);
+
+    scrape::extract_m3u8_from_link(&embed_url, &cookie, &normalized_host)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 // Request type for start_download command
@@ -1124,4 +1208,173 @@ pub async fn open_system_settings() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_image_proxy(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<Vec<u8>, String> {
+    let _cookie = state.cookie();
+    let host_url = settings::normalize_host(&state.settings.lock().unwrap().host_url);
+
+    api::fetch_image_with_referer(&url, &host_url)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+// =============== Player Commands ===============
+
+#[tauri::command]
+pub fn get_local_video_url(
+    app: AppHandle,
+    file_path: String,
+) -> Result<String, String> {
+    crate::player::get_local_video_url(&app, &file_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn validate_video_file(file_path: String) -> Result<(), String> {
+    crate::player::validate_video_file(&file_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_video_metadata(file_path: String) -> Result<crate::player::VideoMetadata, String> {
+    crate::player::get_video_metadata(&file_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_video_stream_url(
+    video_server: State<'_, crate::VideoServerState>,
+    file_path: String,
+) -> Result<String, String> {
+    // Wait for server to be ready
+    let server_url = video_server.server_url.read().await;
+    let base_url = server_url
+        .as_ref()
+        .ok_or_else(|| "Video server not ready".to_string())?;
+
+    // URL encode the file path
+    let encoded_path = urlencoding::encode(&file_path);
+    Ok(format!("{}/video/{}", base_url, encoded_path))
+}
+
+// Helper function to check if video has HE-AAC audio codec
+async fn has_he_aac_audio(file_path: &str) -> Result<bool, String> {
+    use tokio::process::Command;
+
+    let output = Command::new("ffprobe")
+        .args(&[
+            "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=codec_name,profile",
+            "-of", "default=noprint_wrappers=1",
+            file_path,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.contains("profile=HE-AAC") || stdout.contains("profile=HE-AACv2"))
+}
+
+// Get cache path for a converted video file
+fn get_cache_path(original_path: &str) -> Result<PathBuf, String> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| "Failed to get config directory".to_string())?
+        .join("animepahe-dl")
+        .join("video-cache");
+
+    // Create cache directory if it doesn't exist
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+
+    // Generate hash of original path for cache filename
+    let mut hasher = DefaultHasher::new();
+    original_path.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    // Get original filename for reference
+    let original_filename = std::path::Path::new(original_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+
+    // Cache filename: originalname_hash.mp4
+    let cache_filename = format!("{}_{:x}.mp4", original_filename, hash);
+    Ok(config_dir.join(cache_filename))
+}
+
+// Convert audio to AAC LC (only transcode audio, copy video)
+async fn convert_audio_to_aac_lc(input_path: &str, output_path: &PathBuf) -> Result<(), String> {
+    use tokio::process::Command;
+
+    println!("Converting audio for: {}", input_path);
+    println!("Output will be: {:?}", output_path);
+
+    let status = Command::new("ffmpeg")
+        .args(&[
+            "-i", input_path,
+            "-c:v", "copy",           // Copy video stream (no re-encoding, fast!)
+            "-c:a", "aac",            // Convert audio to AAC
+            "-b:a", "192k",           // Audio bitrate
+            "-profile:a", "aac_low",  // AAC LC profile (Safari compatible)
+            "-ar", "48000",           // Sample rate
+            "-y",                     // Overwrite output file
+            output_path.to_str().ok_or("Invalid output path")?,
+        ])
+        .status()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if status.success() {
+        println!("✓ Audio conversion completed successfully");
+        Ok(())
+    } else {
+        Err(format!("ffmpeg conversion failed with status: {}", status))
+    }
+}
+
+// Main command: Get compatible video path (converts if needed, caches result)
+#[tauri::command]
+pub async fn get_compatible_video_path(file_path: String) -> Result<String, String> {
+    println!("Checking video compatibility for: {}", file_path);
+
+    // Check if file exists
+    if !std::path::Path::new(&file_path).exists() {
+        return Err(format!("Video file not found: {}", file_path));
+    }
+
+    // Check if audio codec is HE-AAC
+    let needs_conversion = has_he_aac_audio(&file_path).await?;
+
+    if needs_conversion {
+        println!("⚠ Video has HE-AAC audio, conversion needed");
+
+        // Get cache path
+        let cache_path = get_cache_path(&file_path)?;
+
+        // Check if already converted and cached
+        if cache_path.exists() {
+            println!("✓ Using cached converted file: {:?}", cache_path);
+            return Ok(cache_path.to_string_lossy().to_string());
+        }
+
+        // Convert audio to AAC LC
+        println!("Converting audio to AAC LC...");
+        convert_audio_to_aac_lc(&file_path, &cache_path).await?;
+
+        println!("✓ Conversion complete, using cached file");
+        Ok(cache_path.to_string_lossy().to_string())
+    } else {
+        println!("✓ Audio codec is already compatible, using original file");
+        Ok(file_path)
+    }
 }
